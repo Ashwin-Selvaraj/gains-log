@@ -30,7 +30,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
       <body className="min-h-dvh antialiased">
         <ServiceWorker />
         <SyncBanner />
-        <main className="mx-auto w-full max-w-2xl px-4 pb-32 pt-6">{children}</main>
+        <main className="mx-auto w-full max-w-2xl px-4 pb-44 pt-6">{children}</main>
         <TabBar />
       </body>
     </html>

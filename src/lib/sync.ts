@@ -94,6 +94,12 @@ export async function mutate<T>(
   url: string,
   method: 'POST' | 'PUT' | 'PATCH' | 'DELETE',
   body?: unknown,
+  /**
+   * Lets the request outlive the page. Needed when flushing unsaved edits as
+   * the app is being backgrounded or closed — an ordinary fetch is cancelled
+   * at that point, and the edits would be lost.
+   */
+  keepalive = false,
 ): Promise<T> {
   const payload = body === undefined ? undefined : JSON.stringify(body);
   try {
@@ -101,6 +107,7 @@ export async function mutate<T>(
       method,
       headers: payload ? { 'Content-Type': 'application/json' } : undefined,
       body: payload,
+      keepalive,
     });
     if (!res.ok) throw new Error(`${method} ${url} failed: ${res.status}`);
     return res.status === 204 ? (undefined as T) : ((await res.json()) as T);

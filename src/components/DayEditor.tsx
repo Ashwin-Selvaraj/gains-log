@@ -17,6 +17,7 @@ import { StampButton } from '@/components/StampButton';
 import { PhotoEstimate } from '@/components/PhotoEstimate';
 import { TargetsBar } from '@/components/TargetsBar';
 import { WorkoutCard } from '@/components/WorkoutCard';
+import { SaveBar, type SaveState } from '@/components/SaveBar';
 
 type Props = {
   date: string;
@@ -29,9 +30,12 @@ type Props = {
   settings?: Settings | null;
   /** Today shows the calorie/protein target bar; past days don't need nagging. */
   showTargets?: boolean;
+  /**
+   * History expands a day inside a card, where a fixed footer bar would float
+   * over the wrong content — it gets an inline save bar instead.
+   */
+  inlineSaveBar?: boolean;
 };
-
-const DEBOUNCE_MS = 600;
 
 export function DayEditor({
   date,
@@ -41,17 +45,19 @@ export function DayEditor({
   workoutContext,
   settings = null,
   showTargets = false,
+  inlineSaveBar = false,
 }: Props) {
   const [entry, setEntry] = useState<Entry>(initialEntry);
   const [error, setError] = useState<string | null>(null);
 
-  // One timer per field: typing in the weight box shouldn't cancel a pending
-  // save of the learning note.
-  const timers = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
-  useEffect(() => {
-    const pending = timers.current;
-    return () => Object.values(pending).forEach(clearTimeout);
-  }, []);
+  const [saveState, setSaveState] = useState<SaveState>('clean');
+
+  /**
+   * Edits to the day's own fields accumulate here instead of firing a request
+   * each time. Held in a ref rather than state so the flush triggers below can
+   * read the latest value without re-subscribing on every keystroke.
+   */
+  const pending = useRef<Record<string, unknown>>({});
 
   const report = useCallback((err: unknown) => {
     // A queued write is a success from the user's point of view.
@@ -60,20 +66,75 @@ export function DayEditor({
     setTimeout(() => setError(null), 4000);
   }, []);
 
-  /** Applies the change locally at once, then persists it after the debounce. */
-  const patch = useCallback(
-    (field: keyof Entry, value: unknown, immediate = false) => {
-      setEntry((prev) => ({ ...prev, [field]: value }) as Entry);
+  /**
+   * Sends every staged field in one request. `keepalive` is used when the page
+   * is going away, where an ordinary fetch would be cancelled mid-flight.
+   */
+  const flush = useCallback(
+    async (keepalive = false) => {
+      const body = pending.current;
+      if (Object.keys(body).length === 0) return;
 
-      clearTimeout(timers.current[field]);
-      const send = () =>
-        mutate(`/api/entries/${date}`, 'PATCH', { [field]: value }).catch(report);
+      // Cleared up front so edits made during the request aren't swallowed by
+      // the success path below.
+      pending.current = {};
+      // A background flush still clears the indicator: the request has left and
+      // the outbox catches it if the network drops. Leaving the bar reading
+      // "Unsaved changes" over data that did save is the worse lie.
+      setSaveState(keepalive ? 'clean' : 'saving');
 
-      if (immediate) void send();
-      else timers.current[field] = setTimeout(() => void send(), DEBOUNCE_MS);
+      try {
+        await mutate(`/api/entries/${date}`, 'PATCH', body, keepalive);
+        if (!keepalive) {
+          setSaveState((s) => (s === 'saving' ? 'saved' : s));
+          setTimeout(() => setSaveState((s) => (s === 'saved' ? 'clean' : s)), 1800);
+        }
+      } catch (err) {
+        // Put the fields back so the change isn't silently dropped; the offline
+        // outbox has already queued it if this was a network failure.
+        pending.current = { ...body, ...pending.current };
+        if (err instanceof OfflineQueuedError) {
+          pending.current = {};
+          setSaveState('clean');
+          return;
+        }
+        setSaveState('dirty');
+        report(err);
+      }
     },
     [date, report],
   );
+
+  // Always call the newest flush from the listeners below without re-binding
+  // them on every render.
+  const flushRef = useRef(flush);
+  flushRef.current = flush;
+
+  /** Applies the change locally at once; the write waits for Save or a nav away. */
+  const stage = useCallback((field: keyof Entry, value: unknown) => {
+    setEntry((prev) => ({ ...prev, [field]: value }) as Entry);
+    pending.current[field] = value;
+    setSaveState('dirty');
+  }, []);
+
+  // Leaving the screen counts as "done editing": navigating to another tab
+  // unmounts this, and backgrounding the app fires pagehide/visibilitychange.
+  // Between them, staged edits can't be lost by walking away.
+  useEffect(() => {
+    const onHide = () => {
+      if (document.visibilityState === 'hidden') void flushRef.current(true);
+    };
+    const onPageHide = () => void flushRef.current(true);
+
+    document.addEventListener('visibilitychange', onHide);
+    window.addEventListener('pagehide', onPageHide);
+
+    return () => {
+      document.removeEventListener('visibilitychange', onHide);
+      window.removeEventListener('pagehide', onPageHide);
+      void flushRef.current(true);
+    };
+  }, []);
 
   const addMeal = useCallback(
     async (meal: Omit<Meal, 'id'>) => {
@@ -195,7 +256,7 @@ export function DayEditor({
             label={label}
             icon={icon}
             checked={entry[key]}
-            onToggle={() => patch(key, !entry[key], true)}
+            onToggle={() => stage(key, !entry[key])}
           />
         ))}
       </section>
@@ -223,21 +284,21 @@ export function DayEditor({
             unit="kg"
             value={entry.weightKg}
             step="0.1"
-            onChange={(v) => patch('weightKg', v)}
+            onChange={(v) => stage('weightKg', v)}
           />
           <NumberField
             label="Sleep"
             unit="hrs"
             value={entry.sleepHours}
             step="0.5"
-            onChange={(v) => patch('sleepHours', v)}
+            onChange={(v) => stage('sleepHours', v)}
           />
           <NumberField
             label="Walk"
             unit="min"
             value={entry.walkMinutes}
             step="5"
-            onChange={(v) => patch('walkMinutes', v)}
+            onChange={(v) => stage('walkMinutes', v)}
           />
         </div>
 
@@ -250,7 +311,7 @@ export function DayEditor({
             className="field"
             value={entry.workoutNote}
             placeholder="Push day — bench, OHP, dips"
-            onChange={(e) => patch('workoutNote', e.target.value)}
+            onChange={(e) => stage('workoutNote', e.target.value)}
           />
         </div>
 
@@ -263,7 +324,7 @@ export function DayEditor({
             className="field"
             value={entry.learningNote}
             placeholder="Postgres index types"
-            onChange={(e) => patch('learningNote', e.target.value)}
+            onChange={(e) => stage('learningNote', e.target.value)}
           />
         </div>
       </section>
@@ -281,6 +342,8 @@ export function DayEditor({
         onAdd={addMeal}
         onRemove={removeMeal}
       />
+
+      <SaveBar state={saveState} onSave={() => void flush()} inline={inlineSaveBar} />
     </div>
   );
 }

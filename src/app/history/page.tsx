@@ -111,6 +111,7 @@ export default function HistoryPage() {
                     initialEntry={entry}
                     presets={presets}
                     plan={plan[new Date(`${entry.date}T00:00:00`).getDay()] ?? null}
+                    inlineSaveBar
                   />
                 </div>
               )}

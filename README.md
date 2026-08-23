@@ -6,7 +6,8 @@ data either way.
 
 - **Today** — four stamp buttons, the day's numbers, meetings, and three ways to log
   a meal (saved preset, typed, or a photo Claude estimates for you). Everything
-  auto-saves; there is no save button. Also shows the session assigned for today
+  is staged locally and written in one request when you hit **Save** — or
+  automatically when you leave the screen. Also shows the session assigned for today
   and lets you log sets against it — each exercise showing what you lifted last
   time and the record to beat, which is the thing you can't recall at the rack.
 - **My Meals** — the presets you eat regularly, so breakfast is one tap.
@@ -232,6 +233,22 @@ becomes single-digit milliseconds.
 the browser and sent to the server. Storing a `DateTime` and formatting it server-side
 is how trackers end up filing your Tuesday morning workout under Monday when the
 server runs in UTC.
+
+**Saving.** The day's own fields — the four stamps, weight, sleep, walk minutes
+and the two notes — are staged in memory and sent as a *single* PATCH. Nothing
+goes to the network while you type. A save bar appears above the tab bar the
+moment anything is dirty.
+
+You never have to remember to press it. Staged edits also flush when the editor
+unmounts (switching tabs, collapsing a day in History) and when the page is
+hidden — `visibilitychange` and `pagehide`, which is what fires when a phone
+backgrounds the app or locks. Those departure flushes use `fetch(keepalive:
+true)`, because a normal request is cancelled as the page goes away and the
+edits would be silently lost.
+
+Adding a meal, meeting or workout set stays immediate. Those are discrete
+actions with their own button, and an item sitting in a list that hasn't been
+saved yet is a worse kind of confusing than a single Save button.
 
 **Offline writes.** `src/lib/sync.ts` routes every write through an outbox. When a
 request fails at the transport level (no signal), it's queued in `localStorage` and
