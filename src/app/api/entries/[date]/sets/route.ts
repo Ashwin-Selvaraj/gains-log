@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { ensureEntryId } from '@/lib/entries';
 import { isDateKey } from '@/lib/date';
+import { exerciseKey } from '@/lib/prs';
 
 export const dynamic = 'force-dynamic';
 
@@ -35,7 +36,9 @@ export async function POST(req: Request, { params }: Params) {
 
   // Logging a set means you trained. Ticking the stamp separately is busywork.
   const [set] = await Promise.all([
-    prisma.workoutSet.create({ data: { exercise, reps, weightKg, entryId } }),
+    prisma.workoutSet.create({
+      data: { exercise, exerciseKey: exerciseKey(exercise), reps, weightKg, entryId },
+    }),
     prisma.dailyEntry.update({ where: { id: entryId }, data: { workoutDone: true } }),
   ]);
 

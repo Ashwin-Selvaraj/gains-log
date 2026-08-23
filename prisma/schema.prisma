@@ -100,6 +100,9 @@ model PlanDay {
 model PlanExercise {
   id        String  @id @default(cuid())
   name      String
+  /// Matches WorkoutSet.exerciseKey so plan and actual line up by identity
+  /// rather than by exact spelling.
+  exerciseKey String @default("")
   /// Target sets, and target reps as free text so "8-12" or "AMRAP" both work.
   sets      Int     @default(3)
   reps      String  @default("8-12")
@@ -113,7 +116,11 @@ model PlanExercise {
 /// One actual set performed. The plan says what to do; this records what happened.
 model WorkoutSet {
   id       String @id @default(cuid())
+  /// Display name, exactly as typed.
   exercise String
+  /// Normalised identity (see exerciseKey() in src/lib/prs.ts). Without this,
+  /// "Bench press" and "bench press" would keep separate personal records.
+  exerciseKey String @default("")
   reps     Int
   weightKg Float?
   entryId  String
@@ -122,6 +129,8 @@ model WorkoutSet {
   createdAt DateTime @default(now())
 
   @@index([entryId])
+  @@index([exerciseKey])
+  @@index([exerciseKey, createdAt])
 }
 
 model MealPreset {

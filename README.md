@@ -7,9 +7,12 @@ data either way.
 - **Today** — four stamp buttons, the day's numbers, meetings, and three ways to log
   a meal (saved preset, typed, or a photo Claude estimates for you). Everything
   auto-saves; there is no save button. Also shows the session assigned for today
-  and lets you log sets against it.
+  and lets you log sets against it — each exercise showing what you lifted last
+  time and the record to beat, which is the thing you can't recall at the rack.
 - **My Meals** — the presets you eat regularly, so breakfast is one tap.
 - **Plan** — your weekly training split. Set it once; it repeats every week.
+- **Exercises** — every lift you've logged, its records, strength trend and full
+  session history (Report → Exercises, or tap a lift on the Today screen).
 - **Goals** — every target the app measures against, editable (reached from Report).
 - **Weekly Report** — 7-day average weight and its change, distance to the goal,
   habit streak percentages, average sleep, meetings logged, average calories and
@@ -283,7 +286,7 @@ Settings    (one row)  startWeightKg, goalWeightKg, proteinTarget,
 PlanDay     (one per weekday, 0 = Sunday)   name ("Push" / "Rest" / …)
 └─ PlanExercise[]   name, sets, reps ("8-12"), position
 
-WorkoutSet  (belongs to DailyEntry)   exercise, reps, weightKg?
+WorkoutSet  (belongs to DailyEntry)   exercise, exerciseKey, reps, weightKg?
 ```
 
 **Plan vs. actual.** `PlanDay` is what you're *supposed* to do — a repeating week,
@@ -293,6 +296,44 @@ heaviest set this week minus the heaviest last week, per exercise.
 
 A "session" in the report means a day with at least one set logged, not a ticked
 checkbox — and logging any set ticks the Workout stamp for you.
+
+### Personal records
+
+**Records are derived, never stored.** There is no `PersonalRecord` table; every
+record is computed from the set log on read by `src/lib/prs.ts`. A materialised
+table would need invalidating on every set edit or delete, and a stale PR is
+worse than no PR — delete a mis-logged set here and the record simply recomputes
+downward. Recomputing a year of one person's training takes microseconds.
+
+`src/lib/prs.ts` is deliberately pure: no Prisma, no fetch, no React. It takes
+plain arrays and returns plain objects, so the API routes, the report builder and
+the UI all share one implementation. `src/lib/workouts.ts` is the thin Prisma
+layer that feeds it. **A new metric is a new pure function there — no schema
+change, no endpoint, no UI churn.**
+
+**`exerciseKey` is what makes any of it reliable.** `WorkoutSet.exercise` keeps
+the name exactly as you typed it; `exerciseKey` is that name normalised (trimmed,
+lowercased, whitespace collapsed). Without it, "Bench press", "bench  press" and
+"Bench Press" are three different lifts, each with its own private records —
+silently. Everything groups by the key and displays the most recent spelling.
+A full `Exercise` table was considered and rejected: it forces a create-exercise
+step into the logging flow and turns a rename into a migration. If one is ever
+wanted, `exerciseKey` becomes its foreign key and nothing else changes.
+
+What's tracked per exercise:
+
+| | |
+|---|---|
+| Heaviest ever | The headline — most weight moved, and for how many reps |
+| Estimated 1RM | Epley, `w × (1 + reps/30)`. Comparable across rep ranges, so 100×5 correctly beats 105×1 |
+| Best per rep range | Heaviest load carried for at least 1/3/5/8/10/12 reps |
+| Bodyweight lifts | Pull-ups and dips have no load to extrapolate from, so they track **most reps in a single set** instead |
+| Weeks trained, week streak, first logged | How long you've been running the lift |
+| Totals | Sessions, sets, reps, tonnage |
+
+PR badges are historically accurate: a set is flagged only if nothing *before*
+it was already better, so browsing old sessions shows the records as they stood
+at the time.
 
 Targets live in the `Settings` row and are edited on the **Goals** screen
 (Report → Edit goals). Defaults are declared once, in `prisma/schema.prisma`.

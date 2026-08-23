@@ -5,7 +5,7 @@ import { DayEditor } from '@/components/DayEditor';
 import { ReminderToggle } from '@/components/ReminderToggle';
 import { TodaySkeleton } from '@/components/Skeleton';
 import { todayKey } from '@/lib/date';
-import type { Entry, PlanDay, Preset, Settings } from '@/lib/types';
+import type { Entry, ExerciseContext, PlanDay, Preset, Settings } from '@/lib/types';
 
 /**
  * Rendered on the client because "today" must be the *user's* today. A server
@@ -18,6 +18,9 @@ export default function TodayPage() {
   const [presets, setPresets] = useState<Preset[]>([]);
   const [plan, setPlan] = useState<PlanDay | null>(null);
   const [settings, setSettings] = useState<Settings | null>(null);
+  const [workoutContext, setWorkoutContext] = useState<
+    Record<string, ExerciseContext> | undefined
+  >(undefined);
   const [failed, setFailed] = useState(false);
 
   useEffect(() => {
@@ -29,8 +32,12 @@ export default function TodayPage() {
       fetch('/api/presets').then((r) => r.json() as Promise<Preset[]>),
       fetch('/api/plan').then((r) => r.json() as Promise<PlanDay[]>),
       fetch('/api/settings').then((r) => r.json() as Promise<Settings>),
+      fetch(`/api/workout-context?date=${key}`).then(
+        (r) => r.json() as Promise<{ exercises: ExerciseContext[] }>,
+      ),
     ])
-      .then(([e, p, days, s]) => {
+      .then(([e, p, days, s, ctx]) => {
+        setWorkoutContext(Object.fromEntries(ctx.exercises.map((x) => [x.key, x])));
         setEntry(e);
         setPresets(p);
         // The plan repeats weekly, so today's session is just this weekday's row.
@@ -71,6 +78,7 @@ export default function TodayPage() {
             initialEntry={entry}
             presets={presets}
             plan={plan}
+            workoutContext={workoutContext}
             settings={settings}
             showTargets
           />

@@ -1,15 +1,21 @@
 'use client';
 
 import { useMemo, useState } from 'react';
-import type { PlanDay, WorkoutSet } from '@/lib/types';
+import Link from 'next/link';
+import type { ExerciseContext, PlanDay, WorkoutSet } from '@/lib/types';
 
 type Props = {
   /** The session assigned to this weekday, or null if the plan isn't set up. */
   plan: PlanDay | null;
   sets: WorkoutSet[];
+  /** Last session + standing records per exercise key; absent while loading. */
+  context?: Record<string, ExerciseContext>;
   onLogSet: (set: { exercise: string; reps: number; weightKg: number | null }) => void;
   onRemoveSet: (id: string) => void;
 };
+
+/** Same normalisation as exerciseKey() on the server. */
+const keyOf = (name: string) => name.trim().toLowerCase().replace(/\s+/g, ' ');
 
 const volumeOf = (sets: WorkoutSet[]) =>
   Math.round(sets.reduce((sum, s) => sum + s.reps * (s.weightKg ?? 0), 0));
@@ -22,6 +28,7 @@ const volumeOf = (sets: WorkoutSet[]) =>
 function ExerciseRow({
   name,
   target,
+  context,
   done,
   expanded,
   onToggle,
@@ -34,6 +41,7 @@ function ExerciseRow({
 }: {
   name: string;
   target?: { sets: number; reps: string };
+  context?: ExerciseContext;
   done: WorkoutSet[];
   expanded: boolean;
   onToggle: () => void;
@@ -45,6 +53,29 @@ function ExerciseRow({
   onRemoveSet: (id: string) => void;
 }) {
   const complete = target ? done.length >= target.sets : done.length > 0;
+
+  // What you lifted last time and what you have to beat — the two things you
+  // can't remember standing at the rack.
+  const lastSummary = context?.last
+    ? context.last.sets
+        .map((s) => (s.weightKg === null ? `${s.reps}` : `${s.reps}×${s.weightKg}`))
+        .join(', ')
+    : null;
+
+  const best = context?.bodyweight
+    ? context.bestReps !== null
+      ? `${context.bestReps} reps`
+      : null
+    : context?.heaviestKg !== null && context?.heaviestKg !== undefined
+      ? `${context.heaviestKg} kg`
+      : null;
+
+  // Did anything logged today beat the standing record?
+  const beatToday = context
+    ? context.bodyweight
+      ? done.some((d) => d.reps > (context.bestReps ?? 0))
+      : done.some((d) => (d.weightKg ?? 0) > (context.heaviestKg ?? 0))
+    : false;
 
   return (
     <li className="border-b border-line last:border-0">
@@ -65,7 +96,14 @@ function ExerciseRow({
         </span>
 
         <span className="min-w-0 flex-1">
-          <span className="block truncate text-sm font-medium">{name}</span>
+          <span className="block truncate text-sm font-medium">
+            {name}
+            {beatToday && (
+              <span className="ml-1.5 rounded-full bg-accent px-1.5 py-0.5 text-[10px] font-bold uppercase text-white">
+                PR
+              </span>
+            )}
+          </span>
           <span className="block text-xs tabular-nums text-muted">
             {target && `target ${target.sets}×${target.reps}`}
             {target && done.length > 0 && ' · '}
@@ -75,6 +113,21 @@ function ExerciseRow({
                 .join(', ')}
             {!target && done.length === 0 && 'extra'}
           </span>
+
+          {(lastSummary || best) && (
+            <span className="mt-0.5 block text-xs tabular-nums text-muted">
+              {lastSummary && (
+                <>
+                  Last: {lastSummary}
+                  {context?.daysSince !== null && context?.daysSince !== undefined && (
+                    <> · {context.daysSince}d ago</>
+                  )}
+                </>
+              )}
+              {lastSummary && best && ' · '}
+              {best && <>Best {best}</>}
+            </span>
+          )}
         </span>
 
         <span
@@ -114,6 +167,15 @@ function ExerciseRow({
             </button>
           </div>
 
+          {context && (
+            <Link
+              href={`/exercise/${encodeURIComponent(keyOf(name))}`}
+              className="mt-2 inline-block text-xs font-medium text-accent"
+            >
+              Full history &amp; records →
+            </Link>
+          )}
+
           {done.length > 0 && (
             <ul className="mt-2 flex flex-wrap gap-1.5">
               {done.map((s, i) => (
@@ -147,7 +209,7 @@ function ExerciseRow({
  * split; tapping one opens a two-field logger, because mid-session you want reps
  * and weight in two taps, not a form.
  */
-export function WorkoutCard({ plan, sets, onLogSet, onRemoveSet }: Props) {
+export function WorkoutCard({ plan, sets, context, onLogSet, onRemoveSet }: Props) {
   const [open, setOpen] = useState<string | null>(null);
   const [reps, setReps] = useState('');
   const [weight, setWeight] = useState('');
@@ -190,6 +252,7 @@ export function WorkoutCard({ plan, sets, onLogSet, onRemoveSet }: Props) {
 
   const rowProps = (name: string) => ({
     name,
+    context: context?.[keyOf(name)],
     done: byExercise.get(name) ?? [],
     expanded: open === name,
     onToggle: () => setOpen(open === name ? null : name),

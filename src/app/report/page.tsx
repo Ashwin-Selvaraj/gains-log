@@ -176,6 +176,28 @@ export default function ReportPage() {
             <p className="mt-2 text-xs text-muted">
               Heaviest set per exercise, and the change against last week.
             </p>
+
+            {workouts.prs.length > 0 && (
+              <div className="mt-3 border-t border-line pt-3">
+                <h3 className="mb-2 text-sm font-semibold">
+                  🏆 Records broken this week
+                </h3>
+                <ul className="flex flex-wrap gap-1.5">
+                  {workouts.prs.map((pr, i) => (
+                    <li
+                      key={`${pr.key}-${i}`}
+                      className="rounded-full border border-accent bg-accent/10 px-2.5 py-1
+                                 text-xs tabular-nums"
+                    >
+                      <strong>{pr.exercise}</strong>{' '}
+                      {pr.weightKg === null
+                        ? `${pr.reps} reps`
+                        : `${pr.reps} × ${pr.weightKg}kg`}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
           </>
         )}
       </section>
@@ -245,8 +267,11 @@ export default function ReportPage() {
       )}
 
       <div className="flex gap-2">
+        <Link href="/exercise" className="btn-quiet flex-1">
+          🏋️ Exercises
+        </Link>
         <Link href="/goals" className="btn-quiet flex-1">
-          🎯 Edit goals
+          🎯 Goals
         </Link>
         <a href="/api/export" className="btn-quiet flex-1" download>
           ⬇ Export CSV

@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { withJoins } from '@/lib/db-strategy';
+import { exerciseKey } from '@/lib/prs';
 
 export const dynamic = 'force-dynamic';
 
@@ -45,6 +46,7 @@ export async function PUT(req: Request) {
   const exercises = (body.exercises ?? [])
     .map((e, i) => ({
       name: String(e.name ?? '').trim().slice(0, 100),
+      exerciseKey: exerciseKey(String(e.name ?? '')),
       sets: Math.min(Math.max(Math.round(Number(e.sets) || 3), 1), 20),
       reps: String(e.reps ?? '').trim().slice(0, 20) || '8-12',
       position: i,

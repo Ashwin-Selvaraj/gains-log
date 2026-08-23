@@ -1,6 +1,8 @@
 import { prisma } from '@/lib/prisma';
 import { HABITS } from '@/lib/goals';
 import { getSettings } from '@/lib/settings';
+import { loadSets } from '@/lib/workouts';
+import { markPRs, type PRKind } from '@/lib/prs';
 import { addDays, dateRange, type DateKey } from '@/lib/date';
 import { withJoins } from '@/lib/db-strategy';
 
@@ -37,11 +39,21 @@ export type WeeklyReport = {
     prevVolumeKg: number;
     exercises: {
       name: string;
+      key: string;
       sets: number;
       topWeightKg: number | null;
       prevTopWeightKg: number | null;
       /** Heaviest set this week minus heaviest last week. */
       deltaKg: number | null;
+    }[];
+    /** Records actually broken inside the report window. */
+    prs: {
+      exercise: string;
+      key: string;
+      date: DateKey;
+      reps: number;
+      weightKg: number | null;
+      kinds: PRKind[];
     }[];
   };
 };
@@ -59,7 +71,7 @@ export async function buildWeeklyReport(today: DateKey): Promise<WeeklyReport> {
   const trendDays = dateRange(today, 28);
   const from = trendDays[0];
 
-  const [entries, settings] = await Promise.all([
+  const [entries, settings, allSets] = await Promise.all([
     prisma.dailyEntry.findMany({
       where: { date: { gte: from, lte: today } },
       include: { meetings: true, meals: true, sets: true },
@@ -67,6 +79,9 @@ export async function buildWeeklyReport(today: DateKey): Promise<WeeklyReport> {
       ...withJoins,
     }),
     getSettings(),
+    // Every set ever, because a PR is only a PR relative to all history —
+    // the 28-day window above can't tell you that.
+    loadSets(),
   ]);
 
   const byDate = new Map(entries.map((e) => [e.date, e]));
@@ -124,9 +139,12 @@ export async function buildWeeklyReport(today: DateKey): Promise<WeeklyReport> {
   const volume = (sets: typeof weekSets) =>
     Math.round(sets.reduce((sum, s) => sum + s.reps * (s.weightKg ?? 0), 0));
 
-  const topWeight = (sets: typeof weekSets, exercise: string) => {
+  // Grouped by exerciseKey, not by the typed name: "Bench press" and
+  // "bench  press" are the same lift, and comparing them by string would report
+  // every week as a brand-new exercise.
+  const topWeight = (sets: typeof weekSets, key: string) => {
     const weights = sets
-      .filter((s) => s.exercise === exercise && typeof s.weightKg === 'number')
+      .filter((s) => s.exerciseKey === key && typeof s.weightKg === 'number')
       .map((s) => s.weightKg as number);
     return weights.length ? Math.max(...weights) : null;
   };
@@ -134,20 +152,36 @@ export async function buildWeeklyReport(today: DateKey): Promise<WeeklyReport> {
   // A "session" is a day with at least one set, not a ticked checkbox.
   const sessions = last7.filter((d) => (byDate.get(d)?.sets.length ?? 0) > 0).length;
 
-  const exerciseNames = [...new Set(weekSets.map((s) => s.exercise))];
-  const exercises = exerciseNames
-    .map((name) => {
-      const cur = topWeight(weekSets, name);
-      const prev = topWeight(prevSets, name);
+  const exerciseKeys = [...new Set(weekSets.map((s) => s.exerciseKey))];
+  const exercises = exerciseKeys
+    .map((key) => {
+      const cur = topWeight(weekSets, key);
+      const prev = topWeight(prevSets, key);
+      const mine = weekSets.filter((s) => s.exerciseKey === key);
       return {
-        name,
-        sets: weekSets.filter((s) => s.exercise === name).length,
+        // Show the most recent spelling.
+        name: mine[mine.length - 1]?.exercise ?? key,
+        key,
+        sets: mine.length,
         topWeightKg: cur,
         prevTopWeightKg: prev,
         deltaKg: cur !== null && prev !== null ? round(cur - prev) : null,
       };
     })
     .sort((a, b) => b.sets - a.sets);
+
+  const prMarks = markPRs(allSets);
+  const weekPRs = allSets
+    .filter((s) => last7.includes(s.date) && prMarks.has(s.id))
+    .map((s) => ({
+      exercise: s.exercise,
+      key: s.exerciseKey,
+      date: s.date,
+      reps: s.reps,
+      weightKg: s.weightKg,
+      kinds: prMarks.get(s.id)!,
+    }))
+    .sort((a, b) => b.date.localeCompare(a.date));
 
   return {
     window: { from: last7[0], to: today },
@@ -189,6 +223,7 @@ export async function buildWeeklyReport(today: DateKey): Promise<WeeklyReport> {
       volumeKg: volume(weekSets),
       prevVolumeKg: volume(prevSets),
       exercises,
+      prs: weekPRs,
     },
   };
 }

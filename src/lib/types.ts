@@ -25,6 +25,18 @@ export type WorkoutSet = {
   weightKg: number | null;
 };
 
+export type ExerciseContext = {
+  key: string;
+  name: string;
+  last: { date: string; volumeKg: number; sets: { reps: number; weightKg: number | null }[] } | null;
+  daysSince: number | null;
+  heaviestKg: number | null;
+  bestReps: number | null;
+  best1RM: number | null;
+  bodyweight: boolean;
+  weeksTrained: number;
+};
+
 export type PlanExercise = {
   id: string;
   name: string;

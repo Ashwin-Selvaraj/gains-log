@@ -3,7 +3,16 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { HABITS } from '@/lib/goals';
 import { mutate, OfflineQueuedError } from '@/lib/sync';
-import type { Entry, Meal, Meeting, PlanDay, Preset, Settings, WorkoutSet } from '@/lib/types';
+import type {
+  Entry,
+  ExerciseContext,
+  Meal,
+  Meeting,
+  PlanDay,
+  Preset,
+  Settings,
+  WorkoutSet,
+} from '@/lib/types';
 import { StampButton } from '@/components/StampButton';
 import { PhotoEstimate } from '@/components/PhotoEstimate';
 import { TargetsBar } from '@/components/TargetsBar';
@@ -15,6 +24,8 @@ type Props = {
   presets: Preset[];
   /** The weekly split's session for this day's weekday, if the plan is set up. */
   plan?: PlanDay | null;
+  /** Last session + records per exercise key, for the in-gym context line. */
+  workoutContext?: Record<string, ExerciseContext>;
   settings?: Settings | null;
   /** Today shows the calorie/protein target bar; past days don't need nagging. */
   showTargets?: boolean;
@@ -27,6 +38,7 @@ export function DayEditor({
   initialEntry,
   presets,
   plan = null,
+  workoutContext,
   settings = null,
   showTargets = false,
 }: Props) {
@@ -191,6 +203,7 @@ export function DayEditor({
       <WorkoutCard
         plan={plan}
         sets={entry.sets}
+        context={workoutContext}
         onLogSet={addSet}
         onRemoveSet={removeSet}
       />
