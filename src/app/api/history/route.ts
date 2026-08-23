@@ -25,6 +25,7 @@ export async function GET(req: Request) {
         orderBy: { createdAt: 'asc' },
         select: { id: true, name: true, calories: true, protein: true, source: true },
       },
+      sets: { orderBy: { createdAt: 'asc' } },
     },
     orderBy: { date: 'desc' },
     take: take + 1,

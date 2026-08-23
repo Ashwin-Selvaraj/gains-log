@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import Link from 'next/link';
 import { WeightChart } from '@/components/WeightChart';
 import { PageSkeleton, SkeletonBlock } from '@/components/Skeleton';
 import { todayKey } from '@/lib/date';
@@ -36,7 +37,7 @@ export default function ReportPage() {
     );
   }
 
-  const { weight, habits, sleep, meetings, nutrition, trend } = report;
+  const { weight, habits, sleep, meetings, nutrition, trend, workouts } = report;
   const gaining = weight.change !== null && weight.change > 0;
 
   return (
@@ -97,6 +98,86 @@ export default function ReportPage() {
       <section className="card mb-4">
         <h2 className="mb-3 text-base font-semibold">Trend (4 weeks)</h2>
         <WeightChart data={trend} />
+      </section>
+
+      <section className="card mb-4">
+        <div className="mb-3 flex items-baseline justify-between">
+          <h2 className="text-base font-semibold">Training (last 7 days)</h2>
+          <p className="text-sm tabular-nums text-muted">
+            {workouts.sessions}/{workouts.sessionGoal} sessions
+          </p>
+        </div>
+
+        {workouts.totalSets === 0 ? (
+          <p className="py-2 text-sm text-muted">
+            No sets logged this week. Log them from the Today screen and this fills in.
+          </p>
+        ) : (
+          <>
+            <div className="mb-4 flex items-end gap-4">
+              <div>
+                <p className="text-3xl font-bold tabular-nums">
+                  {workouts.volumeKg.toLocaleString()}
+                  <span className="ml-1 text-base font-normal text-muted">kg volume</span>
+                </p>
+                {workouts.prevVolumeKg > 0 && (
+                  <p
+                    className={`text-sm tabular-nums ${
+                      workouts.volumeKg >= workouts.prevVolumeKg
+                        ? 'text-accent'
+                        : 'text-muted'
+                    }`}
+                  >
+                    {workouts.volumeKg >= workouts.prevVolumeKg ? '▲' : '▼'}{' '}
+                    {Math.abs(
+                      workouts.volumeKg - workouts.prevVolumeKg,
+                    ).toLocaleString()}{' '}
+                    kg vs. previous 7 days
+                  </p>
+                )}
+              </div>
+              <p className="ml-auto text-right text-sm text-muted">
+                {workouts.totalSets} sets
+              </p>
+            </div>
+
+            <ul className="divide-y divide-line">
+              {workouts.exercises.map((ex) => (
+                <li key={ex.name} className="flex items-center gap-3 py-2">
+                  <span className="min-w-0 flex-1 truncate text-sm font-medium">
+                    {ex.name}
+                  </span>
+                  <span className="shrink-0 text-xs tabular-nums text-muted">
+                    {ex.sets} sets
+                  </span>
+                  <span className="w-20 shrink-0 text-right text-sm tabular-nums">
+                    {ex.topWeightKg === null ? '—' : `${ex.topWeightKg} kg`}
+                  </span>
+                  <span
+                    className={`w-14 shrink-0 text-right text-xs tabular-nums ${
+                      ex.deltaKg === null
+                        ? 'text-muted'
+                        : ex.deltaKg > 0
+                          ? 'text-accent'
+                          : ex.deltaKg < 0
+                            ? 'text-red-500'
+                            : 'text-muted'
+                    }`}
+                  >
+                    {ex.deltaKg === null
+                      ? 'new'
+                      : ex.deltaKg === 0
+                        ? '='
+                        : `${ex.deltaKg > 0 ? '+' : ''}${ex.deltaKg}`}
+                  </span>
+                </li>
+              ))}
+            </ul>
+            <p className="mt-2 text-xs text-muted">
+              Heaviest set per exercise, and the change against last week.
+            </p>
+          </>
+        )}
       </section>
 
       <section className="card mb-4">
@@ -163,9 +244,14 @@ export default function ReportPage() {
         </p>
       )}
 
-      <a href="/api/export" className="btn-quiet w-full" download>
-        ⬇ Export everything as CSV
-      </a>
+      <div className="flex gap-2">
+        <Link href="/goals" className="btn-quiet flex-1">
+          🎯 Edit goals
+        </Link>
+        <a href="/api/export" className="btn-quiet flex-1" download>
+          ⬇ Export CSV
+        </a>
+      </div>
     </>
   );
 }

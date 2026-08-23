@@ -5,6 +5,7 @@ import { withJoins } from '@/lib/db-strategy';
 const include = {
   meetings: { orderBy: { time: 'asc' } },
   meals: { orderBy: { createdAt: 'asc' } },
+  sets: { orderBy: { createdAt: 'asc' } },
 } as const;
 
 export type FullEntry = NonNullable<Awaited<ReturnType<typeof peekEntry>>>;
@@ -56,6 +57,7 @@ export function blankEntry(date: DateKey) {
     learningNote: '',
     meetings: [],
     meals: [],
+    sets: [],
   };
 }
 
@@ -72,6 +74,7 @@ export function isEmptyEntry(e: {
   learningNote: string;
   meetings: unknown[];
   meals: unknown[];
+  sets: unknown[];
 }) {
   return (
     !e.workoutDone &&
@@ -84,6 +87,7 @@ export function isEmptyEntry(e: {
     !e.workoutNote &&
     !e.learningNote &&
     e.meetings.length === 0 &&
-    e.meals.length === 0
+    e.meals.length === 0 &&
+    e.sets.length === 0
   );
 }

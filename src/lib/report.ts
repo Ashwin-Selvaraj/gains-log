@@ -1,5 +1,6 @@
 import { prisma } from '@/lib/prisma';
-import { GOALS, HABITS } from '@/lib/goals';
+import { HABITS } from '@/lib/goals';
+import { getSettings } from '@/lib/settings';
 import { addDays, dateRange, type DateKey } from '@/lib/date';
 import { withJoins } from '@/lib/db-strategy';
 
@@ -27,6 +28,22 @@ export type WeeklyReport = {
     calorieTarget: [number, number];
   };
   trend: { date: DateKey; weightKg: number | null }[];
+  workouts: {
+    sessions: number;
+    sessionGoal: number;
+    totalSets: number;
+    /** Sum of reps x weight across every set logged in the last 7 days. */
+    volumeKg: number;
+    prevVolumeKg: number;
+    exercises: {
+      name: string;
+      sets: number;
+      topWeightKg: number | null;
+      prevTopWeightKg: number | null;
+      /** Heaviest set this week minus heaviest last week. */
+      deltaKg: number | null;
+    }[];
+  };
 };
 
 function mean(nums: number[]): number | null {
@@ -42,12 +59,15 @@ export async function buildWeeklyReport(today: DateKey): Promise<WeeklyReport> {
   const trendDays = dateRange(today, 28);
   const from = trendDays[0];
 
-  const entries = await prisma.dailyEntry.findMany({
-    where: { date: { gte: from, lte: today } },
-    include: { meetings: true, meals: true },
-    orderBy: { date: 'asc' },
-    ...withJoins,
-  });
+  const [entries, settings] = await Promise.all([
+    prisma.dailyEntry.findMany({
+      where: { date: { gte: from, lte: today } },
+      include: { meetings: true, meals: true, sets: true },
+      orderBy: { date: 'asc' },
+      ...withJoins,
+    }),
+    getSettings(),
+  ]);
 
   const byDate = new Map(entries.map((e) => [e.date, e]));
   const last7 = dateRange(today, 7);
@@ -94,6 +114,41 @@ export async function buildWeeklyReport(today: DateKey): Promise<WeeklyReport> {
     e!.meals.reduce((sum, m) => sum + (m.protein ?? 0), 0),
   );
 
+  // --- training ---------------------------------------------------------
+  const setsIn = (days: DateKey[]) =>
+    days.flatMap((d) => byDate.get(d)?.sets ?? []);
+
+  const weekSets = setsIn(last7);
+  const prevSets = setsIn(prev7);
+
+  const volume = (sets: typeof weekSets) =>
+    Math.round(sets.reduce((sum, s) => sum + s.reps * (s.weightKg ?? 0), 0));
+
+  const topWeight = (sets: typeof weekSets, exercise: string) => {
+    const weights = sets
+      .filter((s) => s.exercise === exercise && typeof s.weightKg === 'number')
+      .map((s) => s.weightKg as number);
+    return weights.length ? Math.max(...weights) : null;
+  };
+
+  // A "session" is a day with at least one set, not a ticked checkbox.
+  const sessions = last7.filter((d) => (byDate.get(d)?.sets.length ?? 0) > 0).length;
+
+  const exerciseNames = [...new Set(weekSets.map((s) => s.exercise))];
+  const exercises = exerciseNames
+    .map((name) => {
+      const cur = topWeight(weekSets, name);
+      const prev = topWeight(prevSets, name);
+      return {
+        name,
+        sets: weekSets.filter((s) => s.exercise === name).length,
+        topWeightKg: cur,
+        prevTopWeightKg: prev,
+        deltaKg: cur !== null && prev !== null ? round(cur - prev) : null,
+      };
+    })
+    .sort((a, b) => b.sets - a.sets);
+
   return {
     window: { from: last7[0], to: today },
     weight: {
@@ -101,17 +156,17 @@ export async function buildWeeklyReport(today: DateKey): Promise<WeeklyReport> {
       avgPrev7: round(avgPrev7),
       change: avg7 !== null && avgPrev7 !== null ? round(avg7 - avgPrev7) : null,
       latest: round(latest),
-      goal: GOALS.goalWeightKg,
-      start: GOALS.startWeightKg,
-      remaining: reference !== null ? round(GOALS.goalWeightKg - reference) : null,
+      goal: settings.goalWeightKg,
+      start: settings.startWeightKg,
+      remaining: reference !== null ? round(settings.goalWeightKg - reference) : null,
       progress:
         reference !== null
           ? Math.max(
               0,
               Math.min(
                 1,
-                (reference - GOALS.startWeightKg) /
-                  (GOALS.goalWeightKg - GOALS.startWeightKg),
+                (reference - settings.startWeightKg) /
+                  (settings.goalWeightKg - settings.startWeightKg),
               ),
             )
           : null,
@@ -123,9 +178,17 @@ export async function buildWeeklyReport(today: DateKey): Promise<WeeklyReport> {
       avgCalories: round(mean(dayCalories), 0),
       avgProtein: round(mean(dayProtein), 0),
       daysWithMeals: mealDays.length,
-      proteinTarget: GOALS.proteinGramsPerDay,
-      calorieTarget: [GOALS.caloriesPerDayMin, GOALS.caloriesPerDayMax],
+      proteinTarget: settings.proteinTarget,
+      calorieTarget: [settings.caloriesMin, settings.caloriesMax],
     },
     trend: trendDays.map((d) => ({ date: d, weightKg: byDate.get(d)?.weightKg ?? null })),
+    workouts: {
+      sessions,
+      sessionGoal: settings.weeklyWorkoutGoal,
+      totalSets: weekSets.length,
+      volumeKg: volume(weekSets),
+      prevVolumeKg: volume(prevSets),
+      exercises,
+    },
   };
 }

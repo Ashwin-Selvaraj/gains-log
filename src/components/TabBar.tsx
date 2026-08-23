@@ -5,7 +5,8 @@ import { usePathname } from 'next/navigation';
 
 const TABS = [
   { href: '/', label: 'Today', icon: '📋' },
-  { href: '/meals', label: 'My Meals', icon: '🍽️' },
+  { href: '/plan', label: 'Plan', icon: '🏋️' },
+  { href: '/meals', label: 'Meals', icon: '🍽️' },
   { href: '/report', label: 'Report', icon: '📈' },
   { href: '/history', label: 'History', icon: '🗓️' },
 ];
@@ -30,7 +31,7 @@ function TabContent({
   return (
     <span
       className={`flex min-h-[60px] flex-col items-center justify-center gap-0.5
-                  text-xs font-medium transition
+                  text-[11px] font-medium transition
                   ${active || pending ? 'text-accent' : 'text-muted'}`}
     >
       <span aria-hidden className="relative text-xl leading-none">

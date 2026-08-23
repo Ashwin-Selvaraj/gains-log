@@ -5,7 +5,7 @@ import { DayEditor } from '@/components/DayEditor';
 import { ReminderToggle } from '@/components/ReminderToggle';
 import { TodaySkeleton } from '@/components/Skeleton';
 import { todayKey } from '@/lib/date';
-import type { Entry, Preset } from '@/lib/types';
+import type { Entry, PlanDay, Preset, Settings } from '@/lib/types';
 
 /**
  * Rendered on the client because "today" must be the *user's* today. A server
@@ -16,6 +16,8 @@ export default function TodayPage() {
   const [date, setDate] = useState<string | null>(null);
   const [entry, setEntry] = useState<Entry | null>(null);
   const [presets, setPresets] = useState<Preset[]>([]);
+  const [plan, setPlan] = useState<PlanDay | null>(null);
+  const [settings, setSettings] = useState<Settings | null>(null);
   const [failed, setFailed] = useState(false);
 
   useEffect(() => {
@@ -25,10 +27,15 @@ export default function TodayPage() {
     Promise.all([
       fetch(`/api/entries/${key}`).then((r) => r.json() as Promise<Entry>),
       fetch('/api/presets').then((r) => r.json() as Promise<Preset[]>),
+      fetch('/api/plan').then((r) => r.json() as Promise<PlanDay[]>),
+      fetch('/api/settings').then((r) => r.json() as Promise<Settings>),
     ])
-      .then(([e, p]) => {
+      .then(([e, p, days, s]) => {
         setEntry(e);
         setPresets(p);
+        // The plan repeats weekly, so today's session is just this weekday's row.
+        setPlan(days[new Date().getDay()] ?? null);
+        setSettings(s);
       })
       .catch(() => setFailed(true));
   }, []);
@@ -59,7 +66,14 @@ export default function TodayPage() {
 
       {entry && date && (
         <>
-          <DayEditor date={date} initialEntry={entry} presets={presets} showTargets />
+          <DayEditor
+            date={date}
+            initialEntry={entry}
+            presets={presets}
+            plan={plan}
+            settings={settings}
+            showTargets
+          />
           <div className="mt-4">
             <ReminderToggle />
           </div>

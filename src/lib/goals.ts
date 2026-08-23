@@ -1,11 +1,17 @@
-/** The targets this tracker measures against. Edit here, not in the UI. */
-export const GOALS = {
-  startWeightKg: 68,
-  goalWeightKg: 85,
-  proteinGramsPerDay: 140,
-  caloriesPerDayMin: 2800,
-  caloriesPerDayMax: 3100,
-} as const;
+/**
+ * Targets now live in the database (see src/lib/settings.ts) so they can be
+ * edited on the Goals screen. Defaults are declared once, in the Prisma schema.
+ */
+
+export const WEEKDAY_NAMES = [
+  'Sunday',
+  'Monday',
+  'Tuesday',
+  'Wednesday',
+  'Thursday',
+  'Friday',
+  'Saturday',
+] as const;
 
 export const HABITS = [
   { key: 'workoutDone', label: 'Workout', icon: '🏋️' },

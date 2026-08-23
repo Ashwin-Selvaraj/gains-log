@@ -4,7 +4,7 @@ import { useEffect, useState } from 'react';
 import { DayEditor } from '@/components/DayEditor';
 import { formatDay, todayKey } from '@/lib/date';
 import { HABITS } from '@/lib/goals';
-import type { Entry, Preset } from '@/lib/types';
+import type { Entry, PlanDay, Preset } from '@/lib/types';
 
 type Page = { entries: Entry[]; nextCursor: string | null };
 
@@ -15,6 +15,7 @@ function summarise(entry: Entry): string {
   if (entry.meals.length > 0) {
     bits.push(`${entry.meals.reduce((s, m) => s + (m.protein ?? 0), 0)}g protein`);
   }
+  if (entry.sets.length > 0) bits.push(`${entry.sets.length} sets`);
   if (entry.meetings.length > 0) bits.push(`${entry.meetings.length} meetings`);
   if (entry.workoutNote) bits.push(entry.workoutNote);
   return bits.length > 0 ? bits.join(' · ') : 'Not logged — tap to fill in';
@@ -23,6 +24,7 @@ function summarise(entry: Entry): string {
 export default function HistoryPage() {
   const [entries, setEntries] = useState<Entry[]>([]);
   const [presets, setPresets] = useState<Preset[]>([]);
+  const [plan, setPlan] = useState<PlanDay[]>([]);
   const [cursor, setCursor] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [open, setOpen] = useState<string | null>(null);
@@ -31,11 +33,13 @@ export default function HistoryPage() {
     Promise.all([
       fetch(`/api/history?today=${todayKey()}`).then((r) => r.json() as Promise<Page>),
       fetch('/api/presets').then((r) => r.json() as Promise<Preset[]>),
+      fetch('/api/plan').then((r) => r.json() as Promise<PlanDay[]>),
     ])
-      .then(([page, p]) => {
+      .then(([page, p, days]) => {
         setEntries(page.entries);
         setCursor(page.nextCursor);
         setPresets(p);
+        setPlan(days);
       })
       .catch(() => {})
       .finally(() => setLoading(false));
@@ -106,6 +110,7 @@ export default function HistoryPage() {
                     date={entry.date}
                     initialEntry={entry}
                     presets={presets}
+                    plan={plan[new Date(`${entry.date}T00:00:00`).getDay()] ?? null}
                   />
                 </div>
               )}

@@ -6,11 +6,15 @@ data either way.
 
 - **Today** — four stamp buttons, the day's numbers, meetings, and three ways to log
   a meal (saved preset, typed, or a photo Claude estimates for you). Everything
-  auto-saves; there is no save button.
+  auto-saves; there is no save button. Also shows the session assigned for today
+  and lets you log sets against it.
 - **My Meals** — the presets you eat regularly, so breakfast is one tap.
-- **Weekly Report** — 7-day average weight and its change, distance to the 85 kg goal,
+- **Plan** — your weekly training split. Set it once; it repeats every week.
+- **Goals** — every target the app measures against, editable (reached from Report).
+- **Weekly Report** — 7-day average weight and its change, distance to the goal,
   habit streak percentages, average sleep, meetings logged, average calories and
-  protein, and a 4-week weight trend.
+  protein, a 4-week weight trend, and training: sessions vs. goal, weekly volume,
+  and per-exercise progression against last week.
 - **History** — the last 7 days always listed (logged or not, so you can backfill
   yesterday), then every older day you logged, each expandable into a full editor.
 
@@ -272,7 +276,23 @@ DailyEntry  (date is the unique key, "YYYY-MM-DD")
                  source ("manual" | "preset" | "photo-estimate"), photoUrl?
 
 MealPreset  (global)  name, calories?, protein?
+
+Settings    (one row)  startWeightKg, goalWeightKg, proteinTarget,
+                       caloriesMin, caloriesMax, weeklyWorkoutGoal
+
+PlanDay     (one per weekday, 0 = Sunday)   name ("Push" / "Rest" / …)
+└─ PlanExercise[]   name, sets, reps ("8-12"), position
+
+WorkoutSet  (belongs to DailyEntry)   exercise, reps, weightKg?
 ```
 
-Targets live in `src/lib/goals.ts` — starting weight, goal weight, protein and
-calorie targets. Change them there.
+**Plan vs. actual.** `PlanDay` is what you're *supposed* to do — a repeating week,
+so a new week needs no data entry. `WorkoutSet` is what you *actually did*. The
+Today screen shows them side by side, and the report's progression column is the
+heaviest set this week minus the heaviest last week, per exercise.
+
+A "session" in the report means a day with at least one set logged, not a ticked
+checkbox — and logging any set ticks the Workout stamp for you.
+
+Targets live in the `Settings` row and are edited on the **Goals** screen
+(Report → Edit goals). Defaults are declared once, in `prisma/schema.prisma`.

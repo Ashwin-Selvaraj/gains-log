@@ -32,6 +32,7 @@ model DailyEntry {
 
   meetings Meeting[]
   meals    MealEntry[]
+  sets     WorkoutSet[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -61,6 +62,60 @@ model MealEntry {
   /// on SQLite as well as Postgres.
   source   String  @default("manual")
   photoUrl String?
+  entryId  String
+  entry    DailyEntry @relation(fields: [entryId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+
+  @@index([entryId])
+}
+
+/// Single row (id is always "singleton"). Targets used to live in
+/// src/lib/goals.ts as constants; they're here so they can be edited in the app.
+model Settings {
+  id                String @id @default("singleton")
+  startWeightKg     Float  @default(68)
+  goalWeightKg      Float  @default(85)
+  proteinTarget     Int    @default(140)
+  caloriesMin       Int    @default(2800)
+  caloriesMax       Int    @default(3100)
+  /// Training sessions per week the plan is aiming for.
+  weeklyWorkoutGoal Int    @default(5)
+
+  updatedAt DateTime @updatedAt
+}
+
+/// The weekly training split — one row per weekday, 0 = Sunday.
+/// A repeating week rather than per-date assignment: that's how a program is
+/// actually written, and it means a new week needs no data entry.
+model PlanDay {
+  id      String @id @default(cuid())
+  weekday Int    @unique
+  /// "Push", "Pull", "Legs", "Rest" …
+  name    String
+
+  exercises PlanExercise[]
+}
+
+model PlanExercise {
+  id        String  @id @default(cuid())
+  name      String
+  /// Target sets, and target reps as free text so "8-12" or "AMRAP" both work.
+  sets      Int     @default(3)
+  reps      String  @default("8-12")
+  position  Int     @default(0)
+  planDayId String
+  planDay   PlanDay @relation(fields: [planDayId], references: [id], onDelete: Cascade)
+
+  @@index([planDayId])
+}
+
+/// One actual set performed. The plan says what to do; this records what happened.
+model WorkoutSet {
+  id       String @id @default(cuid())
+  exercise String
+  reps     Int
+  weightKg Float?
   entryId  String
   entry    DailyEntry @relation(fields: [entryId], references: [id], onDelete: Cascade)
 

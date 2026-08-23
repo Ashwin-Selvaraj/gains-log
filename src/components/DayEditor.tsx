@@ -3,22 +3,33 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { HABITS } from '@/lib/goals';
 import { mutate, OfflineQueuedError } from '@/lib/sync';
-import type { Entry, Meal, Meeting, Preset } from '@/lib/types';
+import type { Entry, Meal, Meeting, PlanDay, Preset, Settings, WorkoutSet } from '@/lib/types';
 import { StampButton } from '@/components/StampButton';
 import { PhotoEstimate } from '@/components/PhotoEstimate';
 import { TargetsBar } from '@/components/TargetsBar';
+import { WorkoutCard } from '@/components/WorkoutCard';
 
 type Props = {
   date: string;
   initialEntry: Entry;
   presets: Preset[];
+  /** The weekly split's session for this day's weekday, if the plan is set up. */
+  plan?: PlanDay | null;
+  settings?: Settings | null;
   /** Today shows the calorie/protein target bar; past days don't need nagging. */
   showTargets?: boolean;
 };
 
 const DEBOUNCE_MS = 600;
 
-export function DayEditor({ date, initialEntry, presets, showTargets = false }: Props) {
+export function DayEditor({
+  date,
+  initialEntry,
+  presets,
+  plan = null,
+  settings = null,
+  showTargets = false,
+}: Props) {
   const [entry, setEntry] = useState<Entry>(initialEntry);
   const [error, setError] = useState<string | null>(null);
 
@@ -115,6 +126,37 @@ export function DayEditor({ date, initialEntry, presets, showTargets = false }: 
     [report],
   );
 
+  const addSet = useCallback(
+    async (set: { exercise: string; reps: number; weightKg: number | null }) => {
+      const optimistic: WorkoutSet = { ...set, id: `tmp-${crypto.randomUUID()}` };
+      // Logging a set implies the workout happened; the server agrees.
+      setEntry((prev) => ({
+        ...prev,
+        sets: [...prev.sets, optimistic],
+        workoutDone: true,
+      }));
+      try {
+        const saved = await mutate<WorkoutSet>(`/api/entries/${date}/sets`, 'POST', set);
+        setEntry((prev) => ({
+          ...prev,
+          sets: prev.sets.map((s) => (s.id === optimistic.id ? saved : s)),
+        }));
+      } catch (err) {
+        report(err);
+      }
+    },
+    [date, report],
+  );
+
+  const removeSet = useCallback(
+    async (id: string) => {
+      setEntry((prev) => ({ ...prev, sets: prev.sets.filter((s) => s.id !== id) }));
+      if (id.startsWith('tmp-')) return;
+      await mutate(`/api/sets/${id}`, 'DELETE').catch(report);
+    },
+    [report],
+  );
+
   const totals = useMemo(
     () => ({
       calories: entry.meals.reduce((s, m) => s + (m.calories ?? 0), 0),
@@ -146,7 +188,20 @@ export function DayEditor({ date, initialEntry, presets, showTargets = false }: 
         ))}
       </section>
 
-      {showTargets && <TargetsBar calories={totals.calories} protein={totals.protein} />}
+      <WorkoutCard
+        plan={plan}
+        sets={entry.sets}
+        onLogSet={addSet}
+        onRemoveSet={removeSet}
+      />
+
+      {showTargets && settings && (
+        <TargetsBar
+          calories={totals.calories}
+          protein={totals.protein}
+          settings={settings}
+        />
+      )}
 
       <section className="card space-y-4">
         <div className="grid grid-cols-3 gap-2">

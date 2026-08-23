@@ -92,7 +92,7 @@ export class OfflineQueuedError extends Error {
  */
 export async function mutate<T>(
   url: string,
-  method: 'POST' | 'PATCH' | 'DELETE',
+  method: 'POST' | 'PUT' | 'PATCH' | 'DELETE',
   body?: unknown,
 ): Promise<T> {
   const payload = body === undefined ? undefined : JSON.stringify(body);

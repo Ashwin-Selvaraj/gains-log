@@ -18,6 +18,37 @@ export type Meal = {
   photoUrl?: string | null;
 };
 
+export type WorkoutSet = {
+  id: string;
+  exercise: string;
+  reps: number;
+  weightKg: number | null;
+};
+
+export type PlanExercise = {
+  id: string;
+  name: string;
+  sets: number;
+  reps: string;
+};
+
+export type PlanDay = {
+  id: string;
+  weekday: number;
+  name: string;
+  exercises: PlanExercise[];
+};
+
+export type Settings = {
+  id: string;
+  startWeightKg: number;
+  goalWeightKg: number;
+  proteinTarget: number;
+  caloriesMin: number;
+  caloriesMax: number;
+  weeklyWorkoutGoal: number;
+};
+
 export type Entry = {
   id: string;
   date: string;
@@ -32,6 +63,7 @@ export type Entry = {
   learningNote: string;
   meetings: Meeting[];
   meals: Meal[];
+  sets: WorkoutSet[];
 };
 
 export type Preset = {

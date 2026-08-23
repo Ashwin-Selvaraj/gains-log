@@ -1,6 +1,6 @@
 'use client';
 
-import { GOALS } from '@/lib/goals';
+import type { Settings } from '@/lib/types';
 
 function Meter({
   label,
@@ -45,8 +45,20 @@ function Meter({
 }
 
 /** "Am I on track today?" answered without making the user do arithmetic. */
-export function TargetsBar({ calories, protein }: { calories: number; protein: number }) {
-  const { proteinGramsPerDay, caloriesPerDayMin, caloriesPerDayMax } = GOALS;
+export function TargetsBar({
+  calories,
+  protein,
+  settings,
+}: {
+  calories: number;
+  protein: number;
+  settings: Settings;
+}) {
+  const {
+    proteinTarget: proteinGramsPerDay,
+    caloriesMin: caloriesPerDayMin,
+    caloriesMax: caloriesPerDayMax,
+  } = settings;
 
   return (
     <section className="card space-y-3" aria-label="Today's targets">
