@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-label="Gains Log">
+  <!-- Maskable: full-bleed background, artwork kept inside the inner 80% safe zone
+       so Android can crop it to a circle or squircle without clipping the mark. -->
+  <rect width="512" height="512" fill="#0c0c0e"/>
+  <g transform="translate(256 256) scale(0.72) translate(-256 -256)">
+    <g fill="none" stroke="#34c78f" stroke-width="34" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M112 344 L208 248 L288 312 L400 176"/>
+      <path d="M336 176 L400 176 L400 240"/>
+    </g>
+    <rect x="96" y="392" width="320" height="26" rx="13" fill="#34c78f"/>
+  </g>
+</svg>

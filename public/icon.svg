@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-label="Gains Log">
+  <rect width="512" height="512" rx="112" fill="#0c0c0e"/>
+  <g fill="none" stroke="#34c78f" stroke-width="34" stroke-linecap="round" stroke-linejoin="round">
+    <!-- an upward trend line: the whole point of the app -->
+    <path d="M112 344 L208 248 L288 312 L400 176"/>
+    <path d="M336 176 L400 176 L400 240"/>
+  </g>
+  <g fill="#34c78f">
+    <rect x="96" y="392" width="320" height="26" rx="13"/>
+  </g>
+</svg>

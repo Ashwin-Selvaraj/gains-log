@@ -1,0 +1,78 @@
+// Provider is rewritten by scripts/set-db-provider.mjs based on DATABASE_URL:
+// sqlite for local `file:./dev.db`, postgresql for a postgres:// URL.
+// Everything below is deliberately portable between the two — no enums, no
+// Decimal, no native type attributes.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+/// One row per calendar day. `date` is a plain "YYYY-MM-DD" string in the
+/// user's local timezone — storing it as text keeps "today" unambiguous no
+/// matter which device or server timezone writes the row.
+model DailyEntry {
+  id           String  @id @default(cuid())
+  date         String  @unique
+  workoutDone  Boolean @default(false)
+  walkDone     Boolean @default(false)
+  learningDone Boolean @default(false)
+  sleptWell    Boolean @default(false)
+  weightKg     Float?
+  sleepHours   Float?
+  walkMinutes  Int?
+  workoutNote  String  @default("")
+  learningNote String  @default("")
+
+  meetings Meeting[]
+  meals    MealEntry[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([date])
+}
+
+model Meeting {
+  id      String @id @default(cuid())
+  /// "HH:MM", 24-hour.
+  time    String
+  title   String
+  entryId String
+  entry   DailyEntry @relation(fields: [entryId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+
+  @@index([entryId])
+}
+
+model MealEntry {
+  id       String  @id @default(cuid())
+  name     String
+  calories Int?
+  protein  Int?
+  /// "manual" | "preset" | "photo-estimate" — kept as text so the schema works
+  /// on SQLite as well as Postgres.
+  source   String  @default("manual")
+  photoUrl String?
+  entryId  String
+  entry    DailyEntry @relation(fields: [entryId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+
+  @@index([entryId])
+}
+
+model MealPreset {
+  id       String @id @default(cuid())
+  name     String
+  calories Int?
+  protein  Int?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
