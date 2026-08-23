@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
-import { getEntry } from '@/lib/entries';
+import { ensureEntryId } from '@/lib/entries';
 import { isDateKey } from '@/lib/date';
 import { MEAL_SOURCES, type MealSource } from '@/lib/goals';
 
@@ -33,7 +33,6 @@ export async function POST(req: Request, { params }: Params) {
     ? (body.source as MealSource)
     : 'manual';
 
-  const entry = await getEntry(date);
   const meal = await prisma.mealEntry.create({
     data: {
       name,
@@ -41,7 +40,7 @@ export async function POST(req: Request, { params }: Params) {
       protein,
       source,
       photoUrl: typeof body.photoUrl === 'string' ? body.photoUrl : null,
-      entryId: entry.id,
+      entryId: await ensureEntryId(date),
     },
   });
   return NextResponse.json(meal, { status: 201 });

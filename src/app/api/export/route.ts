@@ -1,5 +1,6 @@
 import { prisma } from '@/lib/prisma';
 import { todayKey } from '@/lib/date';
+import { withJoins } from '@/lib/db-strategy';
 
 export const dynamic = 'force-dynamic';
 
@@ -33,6 +34,7 @@ export async function GET() {
   const entries = await prisma.dailyEntry.findMany({
     include: { meetings: { orderBy: { time: 'asc' } }, meals: true },
     orderBy: { date: 'asc' },
+    ...withJoins,
   });
 
   const rows = entries.map((e) =>

@@ -14,7 +14,8 @@ export type Meal = {
   calories: number | null;
   protein: number | null;
   source: MealSource;
-  photoUrl: string | null;
+  /** Absent in the History list — see the comment in api/history/route.ts. */
+  photoUrl?: string | null;
 };
 
 export type Entry = {

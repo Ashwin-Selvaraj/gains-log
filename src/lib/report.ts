@@ -1,6 +1,7 @@
 import { prisma } from '@/lib/prisma';
 import { GOALS, HABITS } from '@/lib/goals';
 import { addDays, dateRange, type DateKey } from '@/lib/date';
+import { withJoins } from '@/lib/db-strategy';
 
 export type WeeklyReport = {
   window: { from: DateKey; to: DateKey };
@@ -45,6 +46,7 @@ export async function buildWeeklyReport(today: DateKey): Promise<WeeklyReport> {
     where: { date: { gte: from, lte: today } },
     include: { meetings: true, meals: true },
     orderBy: { date: 'asc' },
+    ...withJoins,
   });
 
   const byDate = new Map(entries.map((e) => [e.date, e]));

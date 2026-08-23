@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
-import { getEntry } from '@/lib/entries';
+import { ensureEntryId } from '@/lib/entries';
 import { isDateKey } from '@/lib/date';
 
 export const dynamic = 'force-dynamic';
@@ -20,9 +20,8 @@ export async function POST(req: Request, { params }: Params) {
   }
   if (!title) return NextResponse.json({ error: 'title required' }, { status: 400 });
 
-  const entry = await getEntry(date);
   const meeting = await prisma.meeting.create({
-    data: { time, title, entryId: entry.id },
+    data: { time, title, entryId: await ensureEntryId(date) },
   });
   return NextResponse.json(meeting, { status: 201 });
 }

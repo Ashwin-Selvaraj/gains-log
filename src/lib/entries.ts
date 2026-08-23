@@ -1,30 +1,40 @@
 import { prisma } from '@/lib/prisma';
 import type { DateKey } from '@/lib/date';
+import { withJoins } from '@/lib/db-strategy';
 
 const include = {
   meetings: { orderBy: { time: 'asc' } },
   meals: { orderBy: { createdAt: 'asc' } },
 } as const;
 
-export type FullEntry = Awaited<ReturnType<typeof getEntry>>;
+export type FullEntry = NonNullable<Awaited<ReturnType<typeof peekEntry>>>;
 
 /**
- * Fetches the day, creating an empty row on first touch so meals and meetings
- * have something to attach to. A single upsert rather than find-then-create —
- * over a hosted Postgres, the second round trip is the expensive one.
+ * Reads a day with its meetings and meals. Never creates a row — rows come into
+ * existence via PATCH, or via connectOrCreate when a meal or meeting is added.
  */
-export async function getEntry(date: DateKey) {
-  return prisma.dailyEntry.upsert({
-    where: { date },
-    create: { date },
-    update: {},
-    include,
-  });
+export async function peekEntry(date: DateKey) {
+  return prisma.dailyEntry.findUnique({ where: { date }, include, ...withJoins });
 }
 
-/** Read-only variant — does not create a row for a day that was never logged. */
-export async function peekEntry(date: DateKey) {
-  return prisma.dailyEntry.findUnique({ where: { date }, include });
+/**
+ * Returns the day's row id, creating the row if this is the first thing logged
+ * that day.
+ *
+ * `update: { date }` is a deliberate no-op write rather than `{}`: with a real
+ * update clause Prisma compiles this to a single `INSERT ... ON CONFLICT DO
+ * UPDATE ... RETURNING`, which is one round trip. An empty update, or a nested
+ * `connectOrCreate`, makes Prisma fall back to an interactive transaction —
+ * BEGIN, SELECT, INSERT, COMMIT — which is four.
+ */
+export async function ensureEntryId(date: DateKey): Promise<string> {
+  const { id } = await prisma.dailyEntry.upsert({
+    where: { date },
+    create: { date },
+    update: { date },
+    select: { id: true },
+  });
+  return id;
 }
 
 /**

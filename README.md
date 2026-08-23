@@ -171,6 +171,54 @@ runs a Node server; nothing here is Vercel-specific.
 
 ---
 
+## API performance
+
+Measured against Neon `us-east-2` from a laptop in India, production build, 31 days
+of data (124 meals, 62 meetings). One network round trip to that database costs
+**~265 ms**, so that is the floor — anything at ~265 ms is doing a single query.
+
+| Endpoint | Before | After |
+|---|---:|---:|
+| `GET /api/presets` | 315 ms | 262 ms |
+| `GET /api/entries/[date]` | 879 ms | **271 ms** |
+| `GET /api/history` | 938 ms | **328 ms** |
+| `GET /api/report` | 909 ms | 689 ms |
+| `GET /api/export` | 895 ms | 608 ms |
+| `PATCH /api/entries/[date]` | 465 ms | **317 ms** |
+| `POST …/meals` | 1912 ms | **1039 ms** (min 522) |
+| `POST …/meetings` | 1584 ms | **595 ms** |
+
+Four changes got it there:
+
+**1. One query instead of one per relation.** Prisma loads `include`d relations
+with a separate query each, so fetching a day plus its meals and meetings was
+three round trips. The `relationJoins` preview feature makes it a single LATERAL
+join. It is Postgres/MySQL-only, so `scripts/set-db-provider.mjs` toggles the
+preview feature alongside the provider, and `src/lib/db-strategy.ts` only passes
+`relationLoadStrategy: 'join'` when the URL is Postgres.
+
+**2. Reads stopped writing.** `GET /api/entries/[date]` used to upsert the day's
+row, putting a write on the critical path of every page load. It now returns a
+synthetic blank day; rows are created by the first `PATCH` or child insert.
+
+**3. Inserts use an upsert, not `connectOrCreate`.** Adding a meal did "fetch the
+day with all its relations, then insert" — and a nested `connectOrCreate` was no
+better, because Prisma runs it as an interactive transaction (BEGIN, SELECT,
+INSERT, COMMIT — four round trips). `ensureEntryId()` uses `upsert` with a
+non-empty `update` clause, which Prisma compiles to a single
+`INSERT … ON CONFLICT DO UPDATE … RETURNING`. Two round trips total.
+
+**4. History stopped shipping photos.** Photo-estimate meals store a base64
+thumbnail; a month of them would make the history list a multi-megabyte download
+on mobile. History selects the fields it needs and omits `photoUrl` — the Today
+screen still shows the image, history shows the icon.
+
+The remaining ~265 ms is pure network distance, not database time. See the
+section above on co-locating the server with the database — in production that
+becomes single-digit milliseconds.
+
+---
+
 ## Notes on the parts that are easy to get wrong
 
 **Dates.** Every date is a `"YYYY-MM-DD"` string in *your* local timezone, computed in

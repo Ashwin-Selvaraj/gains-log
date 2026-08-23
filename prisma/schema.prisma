@@ -4,7 +4,9 @@
 // Decimal, no native type attributes.
 
 generator client {
-  provider = "prisma-client-js"
+  provider        = "prisma-client-js"
+  // Managed by scripts/set-db-provider.mjs — ["relationJoins"] on Postgres, [] on SQLite.
+  previewFeatures = ["relationJoins"]
 }
 
 datasource db {

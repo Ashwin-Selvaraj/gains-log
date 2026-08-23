@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { blankEntry, isEmptyEntry } from '@/lib/entries';
 import { dateRange, isDateKey, todayKey, type DateKey } from '@/lib/date';
+import { withJoins } from '@/lib/db-strategy';
 
 export const dynamic = 'force-dynamic';
 
@@ -16,10 +17,18 @@ export async function GET(req: Request) {
     where: before ? { date: { lt: before } } : undefined,
     include: {
       meetings: { orderBy: { time: 'asc' } },
-      meals: { orderBy: { createdAt: 'asc' } },
+      // Deliberately no `photoUrl` here. Photo estimates store a base64
+      // thumbnail on the meal; at ~10 KB each, a month of them would turn this
+      // list into a multi-megabyte download on a phone. The Today screen still
+      // shows the photo — history shows the icon.
+      meals: {
+        orderBy: { createdAt: 'asc' },
+        select: { id: true, name: true, calories: true, protein: true, source: true },
+      },
     },
     orderBy: { date: 'desc' },
     take: take + 1,
+    ...withJoins,
   });
 
   const page = rows.slice(0, take);
