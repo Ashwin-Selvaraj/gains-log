@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
-import { getEntry } from '@/lib/entries';
+import { blankEntry, peekEntry } from '@/lib/entries';
 import { isDateKey } from '@/lib/date';
 
 export const dynamic = 'force-dynamic';
@@ -23,7 +23,12 @@ const FIELDS = {
 export async function GET(_req: Request, { params }: Params) {
   const { date } = await params;
   if (!isDateKey(date)) return NextResponse.json({ error: 'Bad date' }, { status: 400 });
-  return NextResponse.json(await getEntry(date));
+
+  // Read-only: opening the app shouldn't write a row. Creating one on every page
+  // load costs a write round trip on the critical path and litters the table with
+  // blank days. The row gets created by the first PATCH or child insert instead.
+  const entry = await peekEntry(date);
+  return NextResponse.json(entry ?? blankEntry(date));
 }
 
 export async function PATCH(req: Request, { params }: Params) {
@@ -55,14 +60,13 @@ export async function PATCH(req: Request, { params }: Params) {
     }
   }
 
+  // No `include` here: the client already has the meetings and meals it drew,
+  // and pulling them back on every debounced keystroke costs two extra round
+  // trips to a database that may be a continent away.
   const entry = await prisma.dailyEntry.upsert({
     where: { date },
     create: { date, ...data },
     update: data,
-    include: {
-      meetings: { orderBy: { time: 'asc' } },
-      meals: { orderBy: { createdAt: 'asc' } },
-    },
   });
 
   return NextResponse.json(entry);

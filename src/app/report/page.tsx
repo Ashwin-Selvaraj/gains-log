@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { WeightChart } from '@/components/WeightChart';
+import { PageSkeleton, SkeletonBlock } from '@/components/Skeleton';
 import { todayKey } from '@/lib/date';
 import type { WeeklyReport } from '@/lib/report';
 
@@ -17,15 +18,21 @@ export default function ReportPage() {
   }, []);
 
   if (failed) {
-    return <p className="card text-sm text-muted">Couldn&apos;t load the report.</p>;
+    return (
+      <PageSkeleton title="Weekly Report">
+        <p className="card text-sm text-muted">Couldn&apos;t load the report.</p>
+      </PageSkeleton>
+    );
   }
 
+  // Header stays put so this reads as the same screen filling in, not a swap.
   if (!report) {
     return (
-      <div className="space-y-4" aria-hidden>
-        <div className="h-28 animate-pulse rounded-2xl bg-line/60" />
-        <div className="h-44 animate-pulse rounded-2xl bg-line/60" />
-      </div>
+      <PageSkeleton title="Weekly Report" subtitle="Last 7 days">
+        <SkeletonBlock className="h-44" />
+        <SkeletonBlock className="h-48" />
+        <SkeletonBlock className="h-64" />
+      </PageSkeleton>
     );
   }
 

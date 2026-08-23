@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { mutate, OfflineQueuedError } from '@/lib/sync';
+import { SkeletonBlock } from '@/components/Skeleton';
 import type { Preset } from '@/lib/types';
 
 export default function MealsPage() {
@@ -102,7 +103,7 @@ export default function MealsPage() {
         </div>
       </form>
 
-      {presets === null && <div className="h-24 animate-pulse rounded-2xl bg-line/60" />}
+      {presets === null && <SkeletonBlock className="h-56" />}
 
       {presets?.length === 0 && (
         <p className="card text-sm text-muted">

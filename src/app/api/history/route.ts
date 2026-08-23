@@ -1,28 +1,9 @@
 import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
-import { isEmptyEntry } from '@/lib/entries';
+import { blankEntry, isEmptyEntry } from '@/lib/entries';
 import { dateRange, isDateKey, todayKey, type DateKey } from '@/lib/date';
 
 export const dynamic = 'force-dynamic';
-
-/** A day with no row yet — rendered so it can be backfilled. */
-function blankEntry(date: DateKey) {
-  return {
-    id: '',
-    date,
-    workoutDone: false,
-    walkDone: false,
-    learningDone: false,
-    sleptWell: false,
-    weightKg: null,
-    sleepHours: null,
-    walkMinutes: null,
-    workoutNote: '',
-    learningNote: '',
-    meetings: [],
-    meals: [],
-  };
-}
 
 export async function GET(req: Request) {
   const params = new URL(req.url).searchParams;

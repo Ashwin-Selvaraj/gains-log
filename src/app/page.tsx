@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react';
 import { DayEditor } from '@/components/DayEditor';
 import { ReminderToggle } from '@/components/ReminderToggle';
+import { TodaySkeleton } from '@/components/Skeleton';
 import { todayKey } from '@/lib/date';
 import type { Entry, Preset } from '@/lib/types';
 
@@ -54,7 +55,7 @@ export default function TodayPage() {
         </p>
       )}
 
-      {!entry && !failed && <SkeletonDay />}
+      {!entry && !failed && <TodaySkeleton />}
 
       {entry && date && (
         <>
@@ -68,16 +69,3 @@ export default function TodayPage() {
   );
 }
 
-function SkeletonDay() {
-  return (
-    <div className="space-y-4" aria-hidden>
-      <div className="grid grid-cols-2 gap-3">
-        {[0, 1, 2, 3].map((i) => (
-          <div key={i} className="h-[92px] animate-pulse rounded-2xl bg-line/60" />
-        ))}
-      </div>
-      <div className="h-40 animate-pulse rounded-2xl bg-line/60" />
-      <div className="h-32 animate-pulse rounded-2xl bg-line/60" />
-    </div>
-  );
-}

@@ -41,6 +41,10 @@ npm install
 cp .env.example .env
 ```
 
+Then put your Neon connection string in `.env` as `DATABASE_URL`. The provider
+switch flips Prisma to `postgresql` automatically. (Leave the default
+`file:./dev.db` instead if you want a throwaway local database.)
+
 ```bash
 npm run db:push && npm run db:seed
 ```
@@ -94,6 +98,31 @@ single-user app with one deployment that's the right trade: no migration history
 maintain, and the build applies the schema automatically.
 
 ---
+
+## Latency: put the server near the database
+
+This is the single biggest factor in how fast the app feels, and it is worth
+understanding before you deploy.
+
+Every query costs one network round trip. Measured from a laptop in India against
+a Neon database in `us-east-2` (Ohio), a *single* trivial query took **~290 ms** —
+that is just the speed of light plus routing, not Neon being slow. The Today
+screen needs three queries, so it took ~880 ms.
+
+Running `npm run dev` locally against a remote Neon database is therefore the
+**slowest** possible configuration: your laptop pays that round trip for every
+single query.
+
+In production it inverts. Deployed on Vercel in a region next to the database,
+the server-to-database trips are ~1–5 ms and your phone pays *one* long hop for
+the whole page instead of three. `vercel.json` pins the functions to `cle1`
+(Cleveland), which is the Vercel region closest to Neon's `us-east-2`.
+
+**If you want it faster still:** create the Neon project in a region near you
+(`ap-south-1` Mumbai, say), point `DATABASE_URL` at it, and change the `regions`
+value in `vercel.json` to the matching Vercel region (`bom1` for Mumbai). Keep the
+two together — co-locating the server and database matters far more than which
+region you pick.
 
 ## Deploy: Vercel + Neon
 
@@ -165,6 +194,13 @@ saving. Nothing is written to the database until you confirm.
 the app is open. A real scheduled push — one that fires with the app closed — needs
 VAPID keys, a stored push subscription, and a server-side scheduler, which is a lot of
 infrastructure for one person's nudge. The toggle is on the Today screen.
+
+**Responsiveness.** Every route has a `loading.tsx`. Without one, tapping a tab
+whose route hasn't been compiled yet (dev) or fetched yet (slow link) leaves the
+*old* screen on display for seconds with no acknowledgement — which reads as a
+dead button. The tab bar also uses `useLinkStatus` to mark the tapped tab as
+pending. Reads never write: `GET /api/entries/[date]` returns a synthetic blank
+day rather than creating a row, so opening the app costs no write.
 
 **Security.** There is no auth, by design — the brief is a single user. Anyone with the
 URL can read and write the data. If that matters, put Vercel's password protection in
