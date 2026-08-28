@@ -6,6 +6,12 @@ result: one HTTPS URL, installable on your phone. Written against a 1 OCPU / 1GB
 resizing to 2GB+ RAM there removes most of the memory caution below and is
 still free.
 
+**Already have an instance running?** This file (below) is the app-deployment
+half only. For the full path — creating the VCN and instance from an empty
+account through to a working HTTPS URL, plus a troubleshooting section built
+from an actual live deployment — see
+[`COMPLETE-GUIDE.md`](COMPLETE-GUIDE.md) in this same folder.
+
 I can't run any of this for you — I don't have shell access to the server.
 Everything here is meant to be pasted into your own SSH session. If a step
 errors, paste the output back and I'll help debug it.
