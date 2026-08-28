@@ -1,0 +1,5 @@
+# Replace with your actual subdomain. Caddy requests and renews the Let's
+# Encrypt certificate for it automatically — nothing else to configure.
+gains.yourdomain.com {
+	reverse_proxy localhost:3000
+}

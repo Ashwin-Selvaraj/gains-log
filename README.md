@@ -177,6 +177,13 @@ Supabase, Vercel Postgres, Railway, Fly Postgres — set `DATABASE_URL` to their
 connection string and the provider switch handles the rest. Host it anywhere that
 runs a Node server; nothing here is Vercel-specific.
 
+### Self-hosting instead (e.g. Oracle Cloud)
+
+More steps than Vercel, but full control and no platform cost. See
+[`deploy/oracle/README.md`](deploy/oracle/README.md) — swap setup for
+low-memory instances, a systemd unit, Caddy for automatic HTTPS, and the
+Oracle-specific two-firewall gotcha that silently blocks everything otherwise.
+
 ---
 
 ## API performance

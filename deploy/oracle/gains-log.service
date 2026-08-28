@@ -1,0 +1,21 @@
+[Unit]
+Description=Gains Log (Next.js)
+After=network.target
+
+[Service]
+Type=simple
+# Change to the account you deploy as — Oracle's default Ubuntu image user is "ubuntu".
+User=ubuntu
+WorkingDirectory=/home/ubuntu/gains-log
+# Next.js loads .env from WorkingDirectory itself (via @next/env) — no
+# EnvironmentFile= here. Deliberate: systemd's EnvironmentFile does not strip
+# quotes from KEY="value" lines, so DATABASE_URL would end up with literal
+# quote characters in it and Prisma would fail to parse the URL.
+ExecStart=/usr/bin/npm start
+Restart=on-failure
+RestartSec=5
+Environment=NODE_ENV=production
+Environment=PORT=3000
+
+[Install]
+WantedBy=multi-user.target
