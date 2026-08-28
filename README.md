@@ -119,18 +119,25 @@ screen needs three queries, so it took ~880 ms.
 
 Running `npm run dev` locally against a remote Neon database is therefore the
 **slowest** possible configuration: your laptop pays that round trip for every
-single query.
+single query — and the same penalty applies to any server that isn't near the
+database either, not just a laptop.
 
-In production it inverts. Deployed on Vercel in a region next to the database,
-the server-to-database trips are ~1–5 ms and your phone pays *one* long hop for
-the whole page instead of three. `vercel.json` pins the functions to `cle1`
-(Cleveland), which is the Vercel region closest to Neon's `us-east-2`.
+**The database was moved from `us-east-2` (Ohio) to `ap-southeast-1`
+(Singapore)** for exactly this reason. This project is deployed on an Oracle
+Cloud instance in Mumbai (see `deploy/oracle/`), and Mumbai↔Ohio is close to the
+worst-case distance available — roughly the same ~290 ms this section already
+measured from a laptop. Neon added a Singapore region, a small fraction of that
+distance from Mumbai, so migrating cut the exact same per-query tax the rest of
+this section describes. Since the database held only the seeded plan and
+presets at the time, the move cost a `db:push` + `db:seed` against the new
+project and nothing else — no data migration needed.
 
-**If you want it faster still:** create the Neon project in a region near you
-(`ap-south-1` Mumbai, say), point `DATABASE_URL` at it, and change the `regions`
-value in `vercel.json` to the matching Vercel region (`bom1` for Mumbai). Keep the
-two together — co-locating the server and database matters far more than which
-region you pick.
+The general rule stands regardless of which platform you deploy to: co-locate
+the server and the database, and pick whichever pairing is physically closest
+to wherever you actually are. If you deploy to Vercel instead of self-hosting,
+`vercel.json`'s `regions` field is the equivalent lever — set it to the Vercel
+region nearest your Neon project (e.g. `bom1` for Mumbai, next to Neon's
+`ap-southeast-1`; `cle1` for Ohio, if you keep the database there instead).
 
 ## Deploy: Vercel + Neon
 
