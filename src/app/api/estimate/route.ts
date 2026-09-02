@@ -241,7 +241,26 @@ export async function POST(req: Request) {
         { status: 503 },
       );
     }
+
     console.error('[estimate]', err);
-    return NextResponse.json({ error: 'Estimate failed.' }, { status: 500 });
+
+    // Pass the API's own explanation through instead of flattening every
+    // remaining failure to "Estimate failed". A rejected image, an unknown
+    // model id and an exhausted credit balance need three different fixes, and
+    // a generic message sends you hunting for the wrong one — as it just did.
+    if (err instanceof Anthropic.APIError) {
+      const detail =
+        (err as { error?: { error?: { message?: string } } })?.error?.error?.message ??
+        err.message;
+      return NextResponse.json(
+        { error: `Anthropic API error (${err.status ?? 'unknown'}): ${detail}` },
+        { status: 502 },
+      );
+    }
+
+    return NextResponse.json(
+      { error: err instanceof Error ? `Estimate failed: ${err.message}` : 'Estimate failed.' },
+      { status: 500 },
+    );
   }
 }
