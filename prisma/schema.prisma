@@ -156,6 +156,31 @@ model WorkoutSet {
   @@index([exerciseKey, createdAt])
 }
 
+/// An exercise moved from a day it was missed onto a later day.
+///
+/// Stored rather than derived: "I skipped legs on Tuesday and I'll do it
+/// Thursday" is a decision, not a fact that can be recomputed from the log.
+/// It carries its own target sets/reps so that editing the weekly plan later
+/// doesn't silently change what was promised.
+model CarriedExercise {
+  id          String @id @default(cuid())
+  name        String
+  exerciseKey String @default("")
+  sets        Int    @default(3)
+  reps        String @default("8-12")
+
+  /// The day it was originally planned for, kept so the UI can say where it
+  /// came from and the report can count what actually slipped.
+  fromDate String
+  /// The day it now appears on.
+  toDate   String
+
+  createdAt DateTime @default(now())
+
+  @@index([toDate])
+  @@index([fromDate])
+}
+
 /// A photo attached to a day — a gym/progress shot, or the plate behind a meal.
 /// The bytes live in Cloudflare R2; only the key and its public URL are stored
 /// here. `key` is kept separately from `url` so the object can still be deleted

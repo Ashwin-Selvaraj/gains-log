@@ -94,6 +94,33 @@ export type PlanExercise = {
   reps: string;
 };
 
+export type CarriedExercise = {
+  id: string;
+  name: string;
+  key: string;
+  sets: number;
+  reps: string;
+  fromDate: string;
+};
+
+export type PlanProgress = {
+  sessionName: string | null;
+  restDay: boolean;
+  exercises: {
+    name: string;
+    exerciseKey: string;
+    targetSets: number;
+    reps: string;
+    doneSets: number;
+    complete: boolean;
+  }[];
+  doneCount: number;
+  totalCount: number;
+  complete: boolean;
+  partial: boolean;
+  missed: { name: string; exerciseKey: string; sets: number; reps: string }[];
+};
+
 export type PlanDay = {
   id: string;
   weekday: number;

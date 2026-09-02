@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server';
+import { prisma } from '@/lib/prisma';
 import { loadSets, planKeysForWeekday } from '@/lib/workouts';
 import { computeRecords, lastSessionBefore } from '@/lib/prs';
 import { isDateKey, todayKey } from '@/lib/date';
@@ -23,19 +24,42 @@ export async function GET(req: Request) {
   // The plan and today's sets don't depend on each other, so they go out
   // together — one round trip instead of two, and this endpoint is on the
   // critical path of every gym session.
-  const [planned, todaySets] = await Promise.all([
+  const [planned, todaySets, carried, planDay] = await Promise.all([
     planKeysForWeekday(weekday),
     // Sets logged today tell us about off-plan exercises we also need.
     loadSets({ since: date }),
+    prisma.carriedExercise.findMany({ where: { toDate: date }, orderBy: { createdAt: 'asc' } }),
+    prisma.planDay.findUnique({ where: { weekday }, select: { name: true } }),
   ]);
+  const loggedToday = todaySets.filter((s) => s.date === date);
+
+  // Carried exercises count as part of today's session, so they need records
+  // and last-session context exactly like planned ones do.
   const keys = [
     ...new Set([
       ...planned.map((p) => p.key),
-      ...todaySets.filter((s) => s.date === date).map((s) => s.exerciseKey),
+      ...carried.map((c) => c.exerciseKey),
+      ...loggedToday.map((s) => s.exerciseKey),
     ]),
   ].filter(Boolean);
 
-  if (keys.length === 0) return NextResponse.json({ date, exercises: [] });
+  const carriedOut = carried.map((c) => ({
+    id: c.id,
+    name: c.name,
+    key: c.exerciseKey,
+    sets: c.sets,
+    reps: c.reps,
+    fromDate: c.fromDate,
+  }));
+
+  if (keys.length === 0) {
+    return NextResponse.json({
+      date,
+      exercises: [],
+      sessionName: planDay?.name ?? null,
+      carried: carriedOut,
+    });
+  }
 
   const sets = await loadSets({ keys });
 
@@ -66,5 +90,10 @@ export async function GET(req: Request) {
     };
   });
 
-  return NextResponse.json({ date, exercises });
+  return NextResponse.json({
+    date,
+    exercises,
+    sessionName: planDay?.name ?? null,
+    carried: carriedOut,
+  });
 }

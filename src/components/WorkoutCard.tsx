@@ -2,7 +2,15 @@
 
 import { useMemo, useState } from 'react';
 import Link from 'next/link';
-import type { ExerciseContext, PlanDay, WorkoutSet } from '@/lib/types';
+import type {
+  CarriedExercise,
+  ExerciseContext,
+  PlanDay,
+  PlanProgress,
+  WorkoutSet,
+} from '@/lib/types';
+import { CarryForward } from '@/components/CarryForward';
+import { formatDay } from '@/lib/date';
 
 type Props = {
   /** The session assigned to this weekday, or null if the plan isn't set up. */
@@ -10,8 +18,16 @@ type Props = {
   sets: WorkoutSet[];
   /** Last session + standing records per exercise key; absent while loading. */
   context?: Record<string, ExerciseContext>;
+  /** Which planned exercises are done, and what's missing. */
+  progress?: PlanProgress | null;
+  /** Exercises moved onto this day from one that was missed. */
+  carried?: CarriedExercise[];
+  /** The date this card is for — carry-forward needs it. */
+  date?: string;
   onLogSet: (set: { exercise: string; reps: number; weightKg: number | null }) => void;
   onRemoveSet: (id: string) => void;
+  onCarried?: () => void;
+  onDropCarried?: (id: string) => void;
 };
 
 /** Same normalisation as exerciseKey() on the server. */
@@ -38,6 +54,8 @@ function ExerciseRow({
   onWeightChange,
   onLog,
   onRemoveSet,
+  onDrop,
+  carriedFrom,
 }: {
   name: string;
   target?: { sets: number; reps: string };
@@ -51,6 +69,9 @@ function ExerciseRow({
   onWeightChange: (v: string) => void;
   onLog: () => void;
   onRemoveSet: (id: string) => void;
+  /** Present only for carried-over rows, which can be dropped from the day. */
+  onDrop?: () => void;
+  carriedFrom?: string;
 }) {
   const complete = target ? done.length >= target.sets : done.length > 0;
 
@@ -69,6 +90,11 @@ function ExerciseRow({
     : context?.heaviestKg !== null && context?.heaviestKg !== undefined
       ? `${context.heaviestKg} kg`
       : null;
+
+  // Nothing ever logged for this lift. Worth saying explicitly rather than
+  // showing an empty space, because "no record yet" is different from "I
+  // haven't loaded your record".
+  const firstTime = Boolean(context) && !context!.last && done.length === 0;
 
   // Did anything logged today beat the standing record?
   const beatToday = context
@@ -114,6 +140,12 @@ function ExerciseRow({
             {!target && done.length === 0 && 'extra'}
           </span>
 
+          {firstTime && (
+            <span className="mt-0.5 block text-xs text-muted">
+              No record yet — whatever you log today becomes the one to beat.
+            </span>
+          )}
+
           {(lastSummary || best) && (
             <span className="mt-0.5 block text-xs tabular-nums text-muted">
               {lastSummary && (
@@ -137,6 +169,21 @@ function ExerciseRow({
           ›
         </span>
       </button>
+
+      {onDrop && (
+        <div className="-mt-1 flex items-center gap-2 pb-2 pl-10">
+          <span className="text-[11px] text-amber-700 dark:text-amber-400">
+            carried from {carriedFrom}
+          </span>
+          <button
+            type="button"
+            onClick={onDrop}
+            className="text-[11px] text-muted underline"
+          >
+            drop
+          </button>
+        </div>
+      )}
 
       {expanded && (
         <div className="pb-3">
@@ -209,7 +256,18 @@ function ExerciseRow({
  * split; tapping one opens a two-field logger, because mid-session you want reps
  * and weight in two taps, not a form.
  */
-export function WorkoutCard({ plan, sets, context, onLogSet, onRemoveSet }: Props) {
+export function WorkoutCard({
+  plan,
+  sets,
+  context,
+  progress = null,
+  carried = [],
+  date,
+  onLogSet,
+  onRemoveSet,
+  onCarried,
+  onDropCarried,
+}: Props) {
   const [open, setOpen] = useState<string | null>(null);
   const [reps, setReps] = useState('');
   const [weight, setWeight] = useState('');
@@ -230,10 +288,13 @@ export function WorkoutCard({ plan, sets, context, onLogSet, onRemoveSet }: Prop
   // Anything logged today that isn't in the plan — a swapped machine, a
   // finisher. It still counts, so it still shows.
   const extras = useMemo(() => {
-    const planned = new Set((plan?.exercises ?? []).map((e) => e.name));
+    const accountedFor = new Set([
+      ...(plan?.exercises ?? []).map((e) => keyOf(e.name)),
+      ...carried.map((c) => keyOf(c.name)),
+    ]);
     const seen = new Set([...byExercise.keys(), ...adHoc]);
-    return [...seen].filter((name) => !planned.has(name));
-  }, [byExercise, plan, adHoc]);
+    return [...seen].filter((name) => !accountedFor.has(keyOf(name)));
+  }, [byExercise, plan, adHoc, carried]);
 
   function submit(exercise: string) {
     const r = Number(reps);
@@ -273,10 +334,36 @@ export function WorkoutCard({ plan, sets, context, onLogSet, onRemoveSet }: Prop
         </h2>
         {sets.length > 0 && (
           <p className="shrink-0 text-sm tabular-nums text-muted">
-            {sets.length} sets · {totalVolume.toLocaleString()} kg
+            {sets.length} {sets.length === 1 ? 'set' : 'sets'} ·{' '}
+            {totalVolume.toLocaleString()} kg
           </p>
         )}
       </div>
+
+      {progress && progress.totalCount > 0 && (
+        <div className="pb-1">
+          <div className="mb-1 flex items-baseline justify-between text-xs">
+            <span
+              className={progress.complete ? 'font-medium text-accent' : 'text-muted'}
+            >
+              {progress.complete
+                ? '✓ Plan complete'
+                : `${progress.doneCount} of ${progress.totalCount} done`}
+            </span>
+            {!progress.complete && progress.missed.length > 0 && (
+              <span className="text-muted">
+                {progress.missed.length} to go
+              </span>
+            )}
+          </div>
+          <div className="h-1.5 overflow-hidden rounded-full bg-line">
+            <div
+              className="h-full rounded-full bg-accent transition-all duration-300"
+              style={{ width: `${(progress.doneCount / progress.totalCount) * 100}%` }}
+            />
+          </div>
+        </div>
+      )}
 
       {isRest && sets.length === 0 && (
         <p className="py-2 text-sm text-muted">
@@ -297,6 +384,29 @@ export function WorkoutCard({ plan, sets, context, onLogSet, onRemoveSet }: Prop
           <ExerciseRow key={name} {...rowProps(name)} />
         ))}
       </ul>
+
+      {carried.length > 0 && (
+        <div className="rounded-xl border border-amber-500/40 bg-amber-500/5 p-2.5">
+          <p className="mb-1 text-xs font-medium text-amber-700 dark:text-amber-400">
+            ↪ Carried over
+          </p>
+          <ul>
+            {carried.map((c) => (
+              <ExerciseRow
+                key={c.id}
+                {...rowProps(c.name)}
+                target={{ sets: c.sets, reps: c.reps }}
+                carriedFrom={formatDay(c.fromDate)}
+                onDrop={onDropCarried ? () => onDropCarried(c.id) : undefined}
+              />
+            ))}
+          </ul>
+        </div>
+      )}
+
+      {progress && date && onCarried && !progress.complete && (
+        <CarryForward date={date} progress={progress} onCarried={onCarried} />
+      )}
 
       <AddExtra
         onAdd={(name) => {
