@@ -10,6 +10,7 @@ import type {
   Meal,
   Meeting,
   PlanDay,
+  Photo,
   Preset,
   Settings,
   WorkoutSet,
@@ -20,6 +21,7 @@ import { FoodPicker } from '@/components/FoodPicker';
 import { TargetsBar } from '@/components/TargetsBar';
 import { WorkoutCard } from '@/components/WorkoutCard';
 import { SaveBar, type SaveState } from '@/components/SaveBar';
+import { PhotoSection } from '@/components/PhotoSection';
 
 type Props = {
   date: string;
@@ -351,6 +353,12 @@ export function DayEditor({
         totals={totals}
         onAdd={addMeal}
         onRemove={removeMeal}
+      />
+
+      <PhotoSection
+        date={date}
+        photos={entry.photos}
+        onChange={(photos: Photo[]) => setEntry((prev) => ({ ...prev, photos }))}
       />
 
       <SaveBar state={saveState} onSave={() => void flush()} inline={inlineSaveBar} />

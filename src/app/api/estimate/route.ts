@@ -113,7 +113,16 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: `Unsupported image type: ${mediaType}` }, { status: 415 });
   }
 
-  const client = new Anthropic();
+  /**
+   * Identity-linked API keys (the kind issued to a user rather than to a
+   * workspace) are rejected unless the request names the workspace it acts in.
+   * The SDK doesn't send that header on its own, so it's passed through here
+   * when ANTHROPIC_WORKSPACE_ID is set; keys that don't need it are unaffected.
+   */
+  const workspaceId = process.env.ANTHROPIC_WORKSPACE_ID?.trim();
+  const client = new Anthropic({
+    defaultHeaders: workspaceId ? { 'anthropic-workspace-id': workspaceId } : undefined,
+  });
 
   try {
     // The food table is fetched alongside the vision call rather than after it —
@@ -213,6 +222,18 @@ export async function POST(req: Request) {
     }
     if (err instanceof Anthropic.AuthenticationError) {
       return NextResponse.json({ error: 'ANTHROPIC_API_KEY is invalid.' }, { status: 401 });
+    }
+    if (
+      err instanceof Anthropic.BadRequestError &&
+      String(err.message).includes('anthropic-workspace-id')
+    ) {
+      return NextResponse.json(
+        {
+          error:
+            'This API key is identity-linked and needs a workspace id. Add ANTHROPIC_WORKSPACE_ID to .env (Anthropic Console → Settings → Workspaces) and restart.',
+        },
+        { status: 400 },
+      );
     }
     if (err instanceof Anthropic.APIConnectionError) {
       return NextResponse.json(

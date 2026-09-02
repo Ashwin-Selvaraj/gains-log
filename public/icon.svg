@@ -1,11 +1,23 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-label="Gains Log">
+  <!--
+    An ascending barbell: weights and upward progress in one mark.
+
+    Built from four thick strokes and nothing else, because a home-screen icon
+    is read at ~48px — thin lines and fine detail turn to mush at that size,
+    while a bold diagonal silhouette stays recognisable.
+  -->
   <rect width="512" height="512" rx="112" fill="#0c0c0e"/>
-  <g fill="none" stroke="#34c78f" stroke-width="34" stroke-linecap="round" stroke-linejoin="round">
-    <!-- an upward trend line: the whole point of the app -->
-    <path d="M112 344 L208 248 L288 312 L400 176"/>
-    <path d="M336 176 L400 176 L400 240"/>
-  </g>
-  <g fill="#34c78f">
-    <rect x="96" y="392" width="320" height="26" rx="13"/>
+
+  <g stroke="#34c78f" stroke-linecap="round" fill="none">
+    <!-- the bar, running low-left to high-right -->
+    <line x1="168" y1="344" x2="344" y2="168" stroke-width="34"/>
+
+    <!-- outer plates, perpendicular to the bar at each end -->
+    <line x1="120" y1="316" x2="196" y2="392" stroke-width="40"/>
+    <line x1="316" y1="120" x2="392" y2="196" stroke-width="40"/>
+
+    <!-- inner plates, set in slightly so it reads as a loaded bar -->
+    <line x1="168" y1="288" x2="224" y2="344" stroke-width="30" opacity="0.55"/>
+    <line x1="288" y1="168" x2="344" y2="224" stroke-width="30" opacity="0.55"/>
   </g>
 </svg>

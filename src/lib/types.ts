@@ -23,6 +23,19 @@ export type Meal = {
   photoUrl?: string | null;
 };
 
+export type Photo = {
+  id: string;
+  kind: 'progress' | 'meal' | 'other';
+  key: string;
+  url: string;
+  caption: string;
+  width: number | null;
+  height: number | null;
+  bytes: number | null;
+  mealId: string | null;
+  createdAt: string;
+};
+
 export type Macros = {
   kcal: number;
   protein: number;
@@ -113,6 +126,7 @@ export type Entry = {
   meetings: Meeting[];
   meals: Meal[];
   sets: WorkoutSet[];
+  photos: Photo[];
 };
 
 export type Preset = {

@@ -1,7 +1,9 @@
 {
   "name": "Gains Log",
   "short_name": "Gains",
-  "description": "Daily tracker for a muscle-gain journey.",
+  "description": "Daily tracker for a muscle-gain journey — habits, training, food and records.",
+  "categories": ["health", "fitness", "lifestyle"],
+  "lang": "en",
   "start_url": "/",
   "scope": "/",
   "display": "standalone",

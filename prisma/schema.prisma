@@ -43,6 +43,7 @@ model DailyEntry {
   meetings Meeting[]
   meals    MealEntry[]
   sets     WorkoutSet[]
+  photos   Photo[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -153,6 +154,33 @@ model WorkoutSet {
   @@index([entryId])
   @@index([exerciseKey])
   @@index([exerciseKey, createdAt])
+}
+
+/// A photo attached to a day — a gym/progress shot, or the plate behind a meal.
+/// The bytes live in Cloudflare R2; only the key and its public URL are stored
+/// here. `key` is kept separately from `url` so the object can still be deleted
+/// from the bucket if the public base URL ever changes (custom domain, etc.).
+model Photo {
+  id      String @id @default(cuid())
+  /// "progress" | "meal" | "other" — also the top-level folder in the bucket.
+  kind    String @default("progress")
+  /// Object key within the bucket, e.g. "progress/2026/09/clx123.jpg".
+  key     String @unique
+  url     String
+  caption String @default("")
+  width   Int?
+  height  Int?
+  bytes   Int?
+
+  entryId String
+  entry   DailyEntry @relation(fields: [entryId], references: [id], onDelete: Cascade)
+  /// Set when the photo is the one behind a logged meal.
+  mealId  String?
+
+  createdAt DateTime @default(now())
+
+  @@index([entryId])
+  @@index([kind])
 }
 
 /// A canonical food with macros stored per 100 g — the single basis everything
