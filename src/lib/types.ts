@@ -136,6 +136,9 @@ export type Settings = {
   caloriesMin: number;
   caloriesMax: number;
   weeklyWorkoutGoal: number;
+  reminderEnabled: boolean;
+  reminderTime: string;
+  timezone: string;
 };
 
 export type Entry = {

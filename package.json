@@ -11,7 +11,8 @@
     "lint": "next lint",
     "db:push": "node scripts/set-db-provider.mjs && prisma db push",
     "db:studio": "node scripts/set-db-provider.mjs && prisma studio",
-    "db:seed": "node scripts/set-db-provider.mjs && prisma generate && node --experimental-strip-types prisma/seed.ts"
+    "db:seed": "node scripts/set-db-provider.mjs && prisma generate && node --experimental-strip-types prisma/seed.ts",
+    "push:keys": "node scripts/generate-vapid-keys.mjs"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.120.0",
@@ -19,12 +20,14 @@
     "@prisma/client": "^6.19.3",
     "next": "^16.3.2",
     "react": "^19.1.1",
-    "react-dom": "^19.1.1"
+    "react-dom": "^19.1.1",
+    "web-push": "^3.6.7"
   },
   "devDependencies": {
     "@types/node": "^22.15.3",
     "@types/react": "^19.1.9",
     "@types/react-dom": "^19.1.7",
+    "@types/web-push": "^3.6.4",
     "autoprefixer": "^10.4.21",
     "eslint": "^9.30.0",
     "eslint-config-next": "^16.3.2",

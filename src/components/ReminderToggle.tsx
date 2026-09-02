@@ -1,145 +1,238 @@
 'use client';
 
-import { useCallback, useEffect, useRef, useState } from 'react';
-import { HABITS } from '@/lib/goals';
-import { todayKey } from '@/lib/date';
-import type { Entry } from '@/lib/types';
+import { useCallback, useEffect, useState } from 'react';
 
-const KEY = 'gains-log:reminder';
-const DEFAULT_TIME = '21:00';
+type PushInfo = {
+  configured: boolean;
+  missing: string[];
+  publicKey: string | null;
+  subscriptions: number;
+};
+
+type Settings = { reminderEnabled: boolean; reminderTime: string; timezone: string };
 
 /**
- * A local notification, not a push notification. It fires only while the app is
- * open or backgrounded in the browser — a true scheduled push needs a server
- * with VAPID keys and a subscription store, which is a lot of moving parts for
- * a one-person tracker. See the README for what it would take.
+ * The push service wants the VAPID key as raw bytes, not base64url text.
+ * Returns an ArrayBuffer rather than a Uint8Array: TypeScript's
+ * `applicationServerKey` accepts BufferSource, and a Uint8Array backed by a
+ * generic ArrayBufferLike doesn't satisfy it.
+ */
+function urlBase64ToBuffer(base64: string): ArrayBuffer {
+  const padded = (base64 + '='.repeat((4 - (base64.length % 4)) % 4))
+    .replace(/-/g, '+')
+    .replace(/_/g, '/');
+  const raw = atob(padded);
+  const buffer = new ArrayBuffer(raw.length);
+  const view = new Uint8Array(buffer);
+  for (let i = 0; i < raw.length; i++) view[i] = raw.charCodeAt(i);
+  return buffer;
+}
+
+/**
+ * Real Web Push, not a timer.
+ *
+ * The previous version scheduled a local notification with setTimeout, which
+ * only fired while the app was open — useless as a reminder, since the whole
+ * point is to reach you when you have forgotten about it. This subscribes the
+ * browser to a push service; the server sends in the evening whether or not
+ * the app is running.
  */
 export function ReminderToggle() {
-  const [enabled, setEnabled] = useState(false);
-  const [time, setTime] = useState(DEFAULT_TIME);
+  const [info, setInfo] = useState<PushInfo | null>(null);
+  const [settings, setSettings] = useState<Settings | null>(null);
+  const [subscribed, setSubscribed] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [status, setStatus] = useState<string | null>(null);
   const [supported, setSupported] = useState(true);
-  const timer = useRef<ReturnType<typeof setTimeout>>(undefined);
 
   useEffect(() => {
-    if (typeof Notification === 'undefined') {
+    if (
+      typeof Notification === 'undefined' ||
+      !('serviceWorker' in navigator) ||
+      !('PushManager' in window)
+    ) {
       setSupported(false);
       return;
     }
+
+    void (async () => {
+      const [push, s] = await Promise.all([
+        fetch('/api/push').then((r) => r.json() as Promise<PushInfo>),
+        fetch('/api/settings').then((r) => r.json() as Promise<Settings>),
+      ]).catch(() => [null, null] as const);
+
+      setInfo(push);
+      setSettings(s);
+
+      const reg = await navigator.serviceWorker.getRegistration();
+      const existing = await reg?.pushManager.getSubscription();
+      setSubscribed(Boolean(existing));
+    })();
+  }, []);
+
+  const saveSettings = useCallback(async (patch: Partial<Settings>) => {
+    setSettings((prev) => (prev ? { ...prev, ...patch } : prev));
+    await fetch('/api/settings', {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(patch),
+    }).catch(() => {});
+  }, []);
+
+  async function enable() {
+    setBusy(true);
+    setStatus(null);
     try {
-      const raw = localStorage.getItem(KEY);
-      if (raw) {
-        const saved = JSON.parse(raw) as { enabled: boolean; time: string };
-        setEnabled(saved.enabled && Notification.permission === 'granted');
-        setTime(saved.time || DEFAULT_TIME);
+      const permission = await Notification.requestPermission();
+      if (permission !== 'granted') {
+        setStatus(
+          permission === 'denied'
+            ? 'Notifications are blocked for this site. Allow them in your browser settings, then try again.'
+            : 'Permission was dismissed.',
+        );
+        return;
       }
-    } catch {
-      /* ignore malformed state */
-    }
-  }, []);
 
-  const fire = useCallback(async () => {
-    try {
-      const entry = (await fetch(`/api/entries/${todayKey()}`).then((r) =>
-        r.json(),
-      )) as Entry;
-
-      const missing: string[] = HABITS.filter((h) => !entry[h.key]).map((h) => h.label);
-      if (entry.weightKg === null) missing.push('Weight');
-      if (entry.meals.length === 0) missing.push('Meals');
-      if (missing.length === 0) return; // nothing to nag about
-
-      new Notification('Gains Log', {
-        body: `Still open today: ${missing.join(', ')}.`,
-        icon: '/icon-192.png',
-        tag: `gains-${todayKey()}`,
+      const reg = await navigator.serviceWorker.ready;
+      const sub = await reg.pushManager.subscribe({
+        // Required by browsers: every push must show a visible notification.
+        userVisibleOnly: true,
+        applicationServerKey: urlBase64ToBuffer(info!.publicKey!),
       });
-    } catch {
-      /* offline — skip tonight rather than showing a wrong reminder */
+
+      const res = await fetch('/api/push/subscribe', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ...sub.toJSON(), userAgent: navigator.userAgent }),
+      });
+      if (!res.ok) throw new Error((await res.json()).error ?? 'Could not register');
+
+      // The server needs the zone to know when it is evening *here*.
+      await saveSettings({
+        reminderEnabled: true,
+        timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+      });
+      setSubscribed(true);
+      setStatus('On — this device will get the evening nudge.');
+    } catch (err) {
+      setStatus(err instanceof Error ? err.message : 'Could not enable notifications');
+    } finally {
+      setBusy(false);
     }
-  }, []);
+  }
 
-  // Schedule the next firing; reschedule after each one.
-  useEffect(() => {
-    clearTimeout(timer.current);
-    if (!enabled) return;
+  async function disable() {
+    setBusy(true);
+    try {
+      const reg = await navigator.serviceWorker.getRegistration();
+      const sub = await reg?.pushManager.getSubscription();
+      if (sub) {
+        await fetch(`/api/push/subscribe?endpoint=${encodeURIComponent(sub.endpoint)}`, {
+          method: 'DELETE',
+        }).catch(() => {});
+        await sub.unsubscribe();
+      }
+      await saveSettings({ reminderEnabled: false });
+      setSubscribed(false);
+      setStatus(null);
+    } finally {
+      setBusy(false);
+    }
+  }
 
-    const schedule = () => {
-      const [h, m] = time.split(':').map(Number);
-      const next = new Date();
-      next.setHours(h, m, 0, 0);
-      if (next.getTime() <= Date.now()) next.setDate(next.getDate() + 1);
-
-      timer.current = setTimeout(
-        () => {
-          void fire();
-          schedule();
-        },
-        next.getTime() - Date.now(),
+  async function sendTest() {
+    setBusy(true);
+    setStatus(null);
+    try {
+      const res = await fetch('/api/push/test', { method: 'POST' });
+      const json = await res.json();
+      setStatus(
+        res.ok
+          ? `Sent to ${json.sent} device${json.sent === 1 ? '' : 's'}.`
+          : (json.error ?? 'Test failed'),
       );
-    };
-
-    schedule();
-    return () => clearTimeout(timer.current);
-  }, [enabled, time, fire]);
-
-  function persist(next: { enabled: boolean; time: string }) {
-    localStorage.setItem(KEY, JSON.stringify(next));
-  }
-
-  async function toggle() {
-    if (enabled) {
-      setEnabled(false);
-      persist({ enabled: false, time });
-      return;
+    } finally {
+      setBusy(false);
     }
-    const permission = await Notification.requestPermission();
-    const granted = permission === 'granted';
-    setEnabled(granted);
-    persist({ enabled: granted, time });
   }
 
-  if (!supported) return null;
-
-  return (
-    <section className="card flex items-center gap-3">
-      <div className="min-w-0 flex-1">
+  if (!supported) {
+    return (
+      <section className="card">
         <p className="text-sm font-medium">Evening reminder</p>
         <p className="text-xs text-muted">
-          {enabled
-            ? 'Nudges you if today is incomplete, while the app is open.'
-            : 'Off — tap to allow notifications.'}
+          This browser doesn&apos;t support push notifications. On iPhone, add the app to
+          your home screen first — Safari only allows them for installed apps.
         </p>
+      </section>
+    );
+  }
+
+  if (info && !info.configured) {
+    return (
+      <section className="card">
+        <p className="text-sm font-medium">Evening reminder</p>
+        <p className="text-xs text-muted">
+          Not set up on the server yet. Run <code>npm run push:keys</code> and add{' '}
+          {info.missing.join(' and ')} to <code>.env</code>.
+        </p>
+      </section>
+    );
+  }
+
+  return (
+    <section className="card space-y-3">
+      <div className="flex items-center gap-3">
+        <div className="min-w-0 flex-1">
+          <p className="text-sm font-medium">Evening reminder</p>
+          <p className="text-xs text-muted">
+            {subscribed
+              ? 'Nudges this device if the day is still incomplete — even with the app closed.'
+              : 'Off — tap to get a nudge when the day is still unlogged.'}
+          </p>
+        </div>
+
+        {subscribed && settings && (
+          <input
+            type="time"
+            className="field w-28 shrink-0 px-2 py-2 text-sm"
+            value={settings.reminderTime}
+            onChange={(e) => void saveSettings({ reminderTime: e.target.value })}
+            aria-label="Reminder time"
+          />
+        )}
+
+        <button
+          type="button"
+          onClick={() => (subscribed ? disable() : enable())}
+          disabled={busy || !info}
+          role="switch"
+          aria-checked={subscribed}
+          aria-label="Evening reminder"
+          className={`relative h-8 w-14 shrink-0 rounded-full transition disabled:opacity-50 ${
+            subscribed ? 'bg-accent' : 'bg-line'
+          }`}
+        >
+          <span
+            className={`absolute top-1 h-6 w-6 rounded-full bg-white shadow transition-all ${
+              subscribed ? 'left-7' : 'left-1'
+            }`}
+          />
+        </button>
       </div>
 
-      {enabled && (
-        <input
-          type="time"
-          className="field w-28 shrink-0 px-2 py-2 text-sm"
-          value={time}
-          onChange={(e) => {
-            setTime(e.target.value);
-            persist({ enabled, time: e.target.value });
-          }}
-          aria-label="Reminder time"
-        />
-      )}
+      {status && <p className="text-xs text-muted">{status}</p>}
 
-      <button
-        type="button"
-        onClick={toggle}
-        role="switch"
-        aria-checked={enabled}
-        aria-label="Evening reminder"
-        className={`relative h-8 w-14 shrink-0 rounded-full transition ${
-          enabled ? 'bg-accent' : 'bg-line'
-        }`}
-      >
-        <span
-          className={`absolute top-1 h-6 w-6 rounded-full bg-white shadow transition-all ${
-            enabled ? 'left-7' : 'left-1'
-          }`}
-        />
-      </button>
+      {subscribed && (
+        <button
+          type="button"
+          className="btn-quiet w-full text-sm"
+          onClick={sendTest}
+          disabled={busy}
+        >
+          Send a test notification
+        </button>
+      )}
     </section>
   );
 }

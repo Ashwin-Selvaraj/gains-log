@@ -14,6 +14,9 @@ export const DEFAULT_SETTINGS = {
   caloriesMin: 2800,
   caloriesMax: 3100,
   weeklyWorkoutGoal: 5,
+  reminderEnabled: false,
+  reminderTime: '21:00',
+  timezone: 'Asia/Kolkata',
 } as const;
 
 /**
@@ -29,6 +32,9 @@ export type Settings = {
   caloriesMin: number;
   caloriesMax: number;
   weeklyWorkoutGoal: number;
+  reminderEnabled: boolean;
+  reminderTime: string;
+  timezone: string;
 };
 
 /**
@@ -52,7 +58,8 @@ export async function getSettings() {
 }
 
 /** Field name -> [min, max]. Keeps a typo from making the report nonsense. */
-export const SETTINGS_BOUNDS: Record<keyof typeof DEFAULT_SETTINGS, [number, number]> = {
+/** Numeric fields only — the reminder fields are validated separately. */
+export const SETTINGS_BOUNDS: Record<string, [number, number]> = {
   startWeightKg: [20, 400],
   goalWeightKg: [20, 400],
   proteinTarget: [0, 500],

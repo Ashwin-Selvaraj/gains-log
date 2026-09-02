@@ -113,8 +113,23 @@ nano .env
 
 Set in `.env`:
 - `DATABASE_URL` — your Neon **pooled** connection string (has `-pooler` in
-  the host)
-- `ANTHROPIC_API_KEY`
+  the host, and needs `&pgbouncer=true` appended — see the README)
+- `ANTHROPIC_API_KEY`, plus `ANTHROPIC_WORKSPACE_ID` if your key is
+  identity-linked
+- `R2_*` for photo storage (see `.env.example`)
+
+Then generate the Web Push keys, once:
+
+```bash
+npm run push:keys
+```
+
+Paste the three `VAPID_*` lines it prints into `.env`. Regenerating them later
+invalidates every existing subscription, so this is a one-time step.
+
+Push notifications need the app running as a persistent process, which the
+systemd service in Part 5 provides — the scheduler lives inside it and polls
+every five minutes. Nothing extra to install, and no cron to configure.
 
 Install and build:
 
