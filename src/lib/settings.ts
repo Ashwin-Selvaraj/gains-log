@@ -16,8 +16,33 @@ export const DEFAULT_SETTINGS = {
   weeklyWorkoutGoal: 5,
 } as const;
 
-export type Settings = typeof DEFAULT_SETTINGS & { id: string };
+/**
+ * Written out rather than derived from DEFAULT_SETTINGS with `typeof`: the
+ * defaults are `as const`, so deriving would give literal types (goalWeightKg:
+ * 85) that a row loaded from the database can never satisfy.
+ */
+export type Settings = {
+  id: string;
+  startWeightKg: number;
+  goalWeightKg: number;
+  proteinTarget: number;
+  caloriesMin: number;
+  caloriesMax: number;
+  weeklyWorkoutGoal: number;
+};
 
+/**
+ * Read-only. Falls back to the defaults in memory rather than creating the row,
+ * so rendering a report never writes — an upsert here put a write on the
+ * critical path of every read, for a row that only ever changes when you edit
+ * a goal.
+ */
+export async function readSettings(): Promise<Settings> {
+  const row = await prisma.settings.findUnique({ where: { id: SINGLETON } });
+  return row ?? { id: SINGLETON, ...DEFAULT_SETTINGS };
+}
+
+/** Use when the row genuinely needs to exist, i.e. before writing to it. */
 export async function getSettings() {
   return prisma.settings.upsert({
     where: { id: SINGLETON },
