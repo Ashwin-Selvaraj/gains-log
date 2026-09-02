@@ -43,6 +43,7 @@ model DailyEntry {
   meetings Meeting[]
   meals    MealEntry[]
   sets     WorkoutSet[]
+  photos   Photo[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -104,7 +105,52 @@ model Settings {
   /// Training sessions per week the plan is aiming for.
   weeklyWorkoutGoal Int    @default(5)
 
+  /// Evening nudge if the day is still incomplete.
+  reminderEnabled Boolean @default(false)
+  /// "HH:MM" in the timezone below, not the server's.
+  reminderTime    String  @default("21:00")
+  /// IANA zone, captured from the browser. The server runs wherever it runs;
+  /// "is it 9pm for you yet" can only be answered against your zone, not its.
+  timezone        String  @default("Asia/Kolkata")
+
   updatedAt DateTime @updatedAt
+}
+
+/// A browser's push endpoint. One row per device that opted in — the same
+/// account on a phone and a laptop are two subscriptions, and either can be
+/// revoked independently by the browser at any time.
+model PushSubscription {
+  id        String @id @default(cuid())
+  /// The push service URL. Unique: re-subscribing the same browser returns the
+  /// same endpoint, and duplicates would mean duplicate notifications.
+  endpoint  String @unique
+  p256dh    String
+  auth      String
+  userAgent String @default("")
+
+  createdAt    DateTime  @default(now())
+  lastSentAt   DateTime?
+  /// Consecutive send failures. A subscription that keeps failing is dead —
+  /// the browser was uninstalled or permission revoked — and gets pruned.
+  failureCount Int       @default(0)
+}
+
+/// One row per notification actually sent.
+///
+/// The (kind, date) uniqueness is the idempotency guard: the scheduler polls
+/// rather than firing on an exact tick, so it can wake up many times in the
+/// reminder window, and the insert failing is how it knows it already sent.
+/// That also makes it survive an app restart at an awkward minute.
+model NotificationLog {
+  id     String   @id @default(cuid())
+  kind   String
+  date   String
+  sentAt DateTime @default(now())
+  /// How many subscriptions it actually reached.
+  reached Int     @default(0)
+
+  @@unique([kind, date])
+  @@index([date])
 }
 
 /// The weekly training split — one row per weekday, 0 = Sunday.
@@ -153,6 +199,58 @@ model WorkoutSet {
   @@index([entryId])
   @@index([exerciseKey])
   @@index([exerciseKey, createdAt])
+}
+
+/// An exercise moved from a day it was missed onto a later day.
+///
+/// Stored rather than derived: "I skipped legs on Tuesday and I'll do it
+/// Thursday" is a decision, not a fact that can be recomputed from the log.
+/// It carries its own target sets/reps so that editing the weekly plan later
+/// doesn't silently change what was promised.
+model CarriedExercise {
+  id          String @id @default(cuid())
+  name        String
+  exerciseKey String @default("")
+  sets        Int    @default(3)
+  reps        String @default("8-12")
+
+  /// The day it was originally planned for, kept so the UI can say where it
+  /// came from and the report can count what actually slipped.
+  fromDate String
+  /// The day it now appears on.
+  toDate   String
+
+  createdAt DateTime @default(now())
+
+  @@index([toDate])
+  @@index([fromDate])
+}
+
+/// A photo attached to a day — a gym/progress shot, or the plate behind a meal.
+/// The bytes live in Cloudflare R2; only the key and its public URL are stored
+/// here. `key` is kept separately from `url` so the object can still be deleted
+/// from the bucket if the public base URL ever changes (custom domain, etc.).
+model Photo {
+  id      String @id @default(cuid())
+  /// "progress" | "meal" | "other" — also the top-level folder in the bucket.
+  kind    String @default("progress")
+  /// Object key within the bucket, e.g. "progress/2026/09/clx123.jpg".
+  key     String @unique
+  url     String
+  caption String @default("")
+  width   Int?
+  height  Int?
+  bytes   Int?
+
+  entryId String
+  entry   DailyEntry @relation(fields: [entryId], references: [id], onDelete: Cascade)
+  /// Set when the photo is the one behind a logged meal.
+  mealId  String?
+
+  createdAt DateTime @default(now())
+
+  @@index([entryId])
+  @@index([kind])
 }
 
 /// A canonical food with macros stored per 100 g — the single basis everything

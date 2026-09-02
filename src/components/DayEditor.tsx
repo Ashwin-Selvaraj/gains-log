@@ -4,12 +4,15 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { HABITS } from '@/lib/goals';
 import { mutate, OfflineQueuedError } from '@/lib/sync';
 import type {
+  CarriedExercise,
   Entry,
   ExerciseContext,
   Macros,
   Meal,
   Meeting,
   PlanDay,
+  PlanProgress,
+  Photo,
   Preset,
   Settings,
   WorkoutSet,
@@ -20,6 +23,10 @@ import { FoodPicker } from '@/components/FoodPicker';
 import { TargetsBar } from '@/components/TargetsBar';
 import { WorkoutCard } from '@/components/WorkoutCard';
 import { SaveBar, type SaveState } from '@/components/SaveBar';
+import { PhotoSection } from '@/components/PhotoSection';
+import { PRCelebration } from '@/components/PRCelebration';
+import { detectPR, exerciseKey, type PRAchievement } from '@/lib/prs';
+import { planProgress } from '@/lib/plan';
 
 type Props = {
   date: string;
@@ -29,6 +36,10 @@ type Props = {
   plan?: PlanDay | null;
   /** Last session + records per exercise key, for the in-gym context line. */
   workoutContext?: Record<string, ExerciseContext>;
+  /** Exercises carried onto this day from one that was missed. */
+  carried?: CarriedExercise[];
+  /** Called after carrying forward or dropping, so the parent can refetch. */
+  onWorkoutChanged?: () => void;
   settings?: Settings | null;
   /** Today shows the calorie/protein target bar; past days don't need nagging. */
   showTargets?: boolean;
@@ -45,6 +56,8 @@ export function DayEditor({
   presets,
   plan = null,
   workoutContext,
+  carried = [],
+  onWorkoutChanged,
   settings = null,
   showTargets = false,
   inlineSaveBar = false,
@@ -53,6 +66,7 @@ export function DayEditor({
   const [error, setError] = useState<string | null>(null);
 
   const [saveState, setSaveState] = useState<SaveState>('clean');
+  const [achievement, setAchievement] = useState<PRAchievement | null>(null);
 
   /**
    * Edits to the day's own fields accumulate here instead of firing a request
@@ -208,6 +222,25 @@ export function DayEditor({
 
   const addSet = useCallback(
     async (set: { exercise: string; reps: number; weightKg: number | null }) => {
+      // Checked before the set is added to state, so "what did I beat?" compares
+      // against the standing record plus everything logged earlier today —
+      // not against the set being logged right now.
+      const key = exerciseKey(set.exercise);
+      const ctx = workoutContext?.[key];
+      const todaySets = entry.sets.filter((s) => exerciseKey(s.exercise) === key);
+
+      const pr = detectPR({
+        exercise: set.exercise,
+        bodyweight: ctx?.bodyweight ?? set.weightKg === null,
+        priorHeaviestKg: ctx?.heaviestKg ?? null,
+        priorBestReps: ctx?.bestReps ?? null,
+        priorBest1RM: ctx?.best1RM ?? null,
+        todaySets,
+        newSet: { reps: set.reps, weightKg: set.weightKg },
+        neverLogged: !ctx?.last,
+      });
+      if (pr) setAchievement(pr);
+
       const optimistic: WorkoutSet = { ...set, id: `tmp-${crypto.randomUUID()}` };
       // Logging a set implies the workout happened; the server agrees.
       setEntry((prev) => ({
@@ -225,7 +258,7 @@ export function DayEditor({
         report(err);
       }
     },
-    [date, report],
+    [date, report, workoutContext, entry.sets],
   );
 
   const removeSet = useCallback(
@@ -236,6 +269,30 @@ export function DayEditor({
     },
     [report],
   );
+
+  /**
+   * Computed here rather than taken from the server so the bar moves the
+   * instant a set is logged. Carried work counts toward the day's completion —
+   * it is part of today's session now, whatever day it was promised on.
+   */
+  const progress: PlanProgress | null = useMemo(() => {
+    const planned = [
+      ...(plan?.exercises ?? []).map((e) => ({
+        name: e.name,
+        exerciseKey: exerciseKey(e.name),
+        sets: e.sets,
+        reps: e.reps,
+      })),
+      ...carried.map((c) => ({
+        name: c.name,
+        exerciseKey: c.key,
+        sets: c.sets,
+        reps: c.reps,
+      })),
+    ];
+    if (planned.length === 0) return null;
+    return planProgress(plan?.name ?? null, planned, entry.sets);
+  }, [plan, carried, entry.sets]);
 
   const totals = useMemo(
     () =>
@@ -279,6 +336,14 @@ export function DayEditor({
         plan={plan}
         sets={entry.sets}
         context={workoutContext}
+        progress={progress}
+        carried={carried}
+        date={date}
+        onCarried={() => onWorkoutChanged?.()}
+        onDropCarried={async (id) => {
+          await fetch(`/api/carried/${id}`, { method: 'DELETE' }).catch(() => {});
+          onWorkoutChanged?.();
+        }}
         onLogSet={addSet}
         onRemoveSet={removeSet}
       />
@@ -352,6 +417,14 @@ export function DayEditor({
         onAdd={addMeal}
         onRemove={removeMeal}
       />
+
+      <PhotoSection
+        date={date}
+        photos={entry.photos}
+        onChange={(photos: Photo[]) => setEntry((prev) => ({ ...prev, photos }))}
+      />
+
+      <PRCelebration achievement={achievement} onDismiss={() => setAchievement(null)} />
 
       <SaveBar state={saveState} onSave={() => void flush()} inline={inlineSaveBar} />
     </div>

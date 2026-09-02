@@ -14,10 +14,41 @@ export const DEFAULT_SETTINGS = {
   caloriesMin: 2800,
   caloriesMax: 3100,
   weeklyWorkoutGoal: 5,
+  reminderEnabled: false,
+  reminderTime: '21:00',
+  timezone: 'Asia/Kolkata',
 } as const;
 
-export type Settings = typeof DEFAULT_SETTINGS & { id: string };
+/**
+ * Written out rather than derived from DEFAULT_SETTINGS with `typeof`: the
+ * defaults are `as const`, so deriving would give literal types (goalWeightKg:
+ * 85) that a row loaded from the database can never satisfy.
+ */
+export type Settings = {
+  id: string;
+  startWeightKg: number;
+  goalWeightKg: number;
+  proteinTarget: number;
+  caloriesMin: number;
+  caloriesMax: number;
+  weeklyWorkoutGoal: number;
+  reminderEnabled: boolean;
+  reminderTime: string;
+  timezone: string;
+};
 
+/**
+ * Read-only. Falls back to the defaults in memory rather than creating the row,
+ * so rendering a report never writes — an upsert here put a write on the
+ * critical path of every read, for a row that only ever changes when you edit
+ * a goal.
+ */
+export async function readSettings(): Promise<Settings> {
+  const row = await prisma.settings.findUnique({ where: { id: SINGLETON } });
+  return row ?? { id: SINGLETON, ...DEFAULT_SETTINGS };
+}
+
+/** Use when the row genuinely needs to exist, i.e. before writing to it. */
 export async function getSettings() {
   return prisma.settings.upsert({
     where: { id: SINGLETON },
@@ -27,7 +58,8 @@ export async function getSettings() {
 }
 
 /** Field name -> [min, max]. Keeps a typo from making the report nonsense. */
-export const SETTINGS_BOUNDS: Record<keyof typeof DEFAULT_SETTINGS, [number, number]> = {
+/** Numeric fields only — the reminder fields are validated separately. */
+export const SETTINGS_BOUNDS: Record<string, [number, number]> = {
   startWeightKg: [20, 400],
   goalWeightKg: [20, 400],
   proteinTarget: [0, 500],

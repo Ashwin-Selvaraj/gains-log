@@ -91,3 +91,56 @@ self.addEventListener('fetch', (event) => {
     );
   }
 });
+
+
+/* ── Push notifications ───────────────────────────────────────────────────
+   The service worker is the only thing running when the app is closed, which
+   is the whole point: a reminder that only fires while you already have the
+   app open is not a reminder. */
+
+self.addEventListener('push', (event) => {
+  // A push with no payload still deserves something rather than nothing —
+  // some services send an empty wake-up.
+  let data = { title: 'Gains Log', body: 'Time to log today.', url: '/' };
+  try {
+    if (event.data) data = { ...data, ...event.data.json() };
+  } catch {
+    if (event.data) data.body = event.data.text();
+  }
+
+  event.waitUntil(
+    self.registration.showNotification(data.title, {
+      body: data.body,
+      icon: '/icon-192.png',
+      badge: '/icon-192.png',
+      // Same tag replaces an older unread reminder instead of stacking three
+      // of them by Friday.
+      tag: data.tag || 'gains-log',
+      renotify: true,
+      data: { url: data.url || '/' },
+    }),
+  );
+});
+
+self.addEventListener('notificationclick', (event) => {
+  event.notification.close();
+  const target = event.notification.data?.url || '/';
+
+  event.waitUntil(
+    (async () => {
+      const clients = await self.clients.matchAll({
+        type: 'window',
+        includeUncontrolled: true,
+      });
+      // Focus an open tab rather than opening a second copy of the app.
+      for (const client of clients) {
+        if (client.url.includes(self.location.origin) && 'focus' in client) {
+          await client.focus();
+          if ('navigate' in client) await client.navigate(target);
+          return;
+        }
+      }
+      await self.clients.openWindow(target);
+    })(),
+  );
+});

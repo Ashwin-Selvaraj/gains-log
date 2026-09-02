@@ -26,6 +26,7 @@ export async function GET(req: Request) {
         select: { id: true, name: true, calories: true, protein: true, source: true },
       },
       sets: { orderBy: { createdAt: 'asc' } },
+      photos: { orderBy: { createdAt: 'desc' } },
     },
     orderBy: { date: 'desc' },
     take: take + 1,

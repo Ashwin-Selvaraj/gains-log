@@ -1,11 +1,18 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { DayEditor } from '@/components/DayEditor';
 import { ReminderToggle } from '@/components/ReminderToggle';
 import { TodaySkeleton } from '@/components/Skeleton';
 import { todayKey } from '@/lib/date';
-import type { Entry, ExerciseContext, PlanDay, Preset, Settings } from '@/lib/types';
+import type {
+  CarriedExercise,
+  Entry,
+  ExerciseContext,
+  PlanDay,
+  Preset,
+  Settings,
+} from '@/lib/types';
 
 /**
  * Rendered on the client because "today" must be the *user's* today. A server
@@ -21,6 +28,7 @@ export default function TodayPage() {
   const [workoutContext, setWorkoutContext] = useState<
     Record<string, ExerciseContext> | undefined
   >(undefined);
+  const [carried, setCarried] = useState<CarriedExercise[]>([]);
   const [failed, setFailed] = useState(false);
 
   useEffect(() => {
@@ -33,11 +41,16 @@ export default function TodayPage() {
       fetch('/api/plan').then((r) => r.json() as Promise<PlanDay[]>),
       fetch('/api/settings').then((r) => r.json() as Promise<Settings>),
       fetch(`/api/workout-context?date=${key}`).then(
-        (r) => r.json() as Promise<{ exercises: ExerciseContext[] }>,
+        (r) =>
+          r.json() as Promise<{
+            exercises: ExerciseContext[];
+            carried: CarriedExercise[];
+          }>,
       ),
     ])
       .then(([e, p, days, s, ctx]) => {
         setWorkoutContext(Object.fromEntries(ctx.exercises.map((x) => [x.key, x])));
+        setCarried(ctx.carried ?? []);
         setEntry(e);
         setPresets(p);
         // The plan repeats weekly, so today's session is just this weekday's row.
@@ -46,6 +59,24 @@ export default function TodayPage() {
       })
       .catch(() => setFailed(true));
   }, []);
+
+  /** Re-reads plan progress and carried exercises after they change. */
+  const refreshWorkout = useCallback(() => {
+    if (!date) return;
+    fetch(`/api/workout-context?date=${date}`)
+      .then(
+        (r) =>
+          r.json() as Promise<{
+            exercises: ExerciseContext[];
+            carried: CarriedExercise[];
+          }>,
+      )
+      .then((ctx) => {
+        setWorkoutContext(Object.fromEntries(ctx.exercises.map((x) => [x.key, x])));
+        setCarried(ctx.carried ?? []);
+      })
+      .catch(() => {});
+  }, [date]);
 
   const heading = date
     ? new Date(`${date}T00:00:00`).toLocaleDateString(undefined, {
@@ -79,6 +110,8 @@ export default function TodayPage() {
             presets={presets}
             plan={plan}
             workoutContext={workoutContext}
+            carried={carried}
+            onWorkoutChanged={refreshWorkout}
             settings={settings}
             showTargets
           />

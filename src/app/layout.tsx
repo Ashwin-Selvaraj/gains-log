@@ -3,13 +3,23 @@ import './globals.css';
 import { TabBar } from '@/components/TabBar';
 import { ServiceWorker } from '@/components/ServiceWorker';
 import { SyncBanner } from '@/components/SyncBanner';
+import { AppHeader } from '@/components/AppHeader';
 
 export const metadata: Metadata = {
-  title: 'Gains Log',
-  description: 'Daily tracker for a muscle-gain journey.',
+  // The template gives every page its own tab title ("Report · Gains Log")
+  // instead of five identical ones, which matters once tabs are open on a laptop.
+  title: { default: 'Gains Log', template: '%s · Gains Log' },
+  description: 'Daily tracker for a muscle-gain journey — habits, training, food and records.',
+  applicationName: 'Gains Log',
   manifest: '/manifest.webmanifest',
   appleWebApp: { capable: true, title: 'Gains Log', statusBarStyle: 'default' },
-  icons: { icon: '/icon.svg', apple: '/apple-touch-icon.png' },
+  icons: {
+    icon: [
+      { url: '/icon.svg', type: 'image/svg+xml' },
+      { url: '/icon-192.png', sizes: '192x192', type: 'image/png' },
+    ],
+    apple: '/apple-touch-icon.png',
+  },
 };
 
 export const viewport: Viewport = {
@@ -30,7 +40,8 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
       <body className="min-h-dvh antialiased">
         <ServiceWorker />
         <SyncBanner />
-        <main className="mx-auto w-full max-w-2xl px-4 pb-44 pt-6">{children}</main>
+        <AppHeader />
+        <main className="mx-auto w-full max-w-2xl px-4 pb-44 pt-2">{children}</main>
         <TabBar />
       </body>
     </html>

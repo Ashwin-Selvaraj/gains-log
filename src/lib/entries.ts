@@ -6,6 +6,7 @@ const include = {
   meetings: { orderBy: { time: 'asc' } },
   meals: { orderBy: { createdAt: 'asc' } },
   sets: { orderBy: { createdAt: 'asc' } },
+  photos: { orderBy: { createdAt: 'desc' } },
 } as const;
 
 export type FullEntry = NonNullable<Awaited<ReturnType<typeof peekEntry>>>;
@@ -58,6 +59,7 @@ export function blankEntry(date: DateKey) {
     meetings: [],
     meals: [],
     sets: [],
+    photos: [],
   };
 }
 
@@ -75,6 +77,7 @@ export function isEmptyEntry(e: {
   meetings: unknown[];
   meals: unknown[];
   sets: unknown[];
+  photos: unknown[];
 }) {
   return (
     !e.workoutDone &&
@@ -88,6 +91,7 @@ export function isEmptyEntry(e: {
     !e.learningNote &&
     e.meetings.length === 0 &&
     e.meals.length === 0 &&
-    e.sets.length === 0
+    e.sets.length === 0 &&
+    e.photos.length === 0
   );
 }

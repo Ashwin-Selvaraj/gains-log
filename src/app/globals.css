@@ -94,3 +94,86 @@ body {
     transition-duration: 0.01ms !important;
   }
 }
+
+/* ── PR celebration ───────────────────────────────────────────────────────
+   Drops in, holds, slides back out. Kept to transform and opacity only so it
+   stays on the compositor and never janks the reps field behind it. */
+@keyframes pr-drop {
+  0% {
+    transform: translateY(-120%) scale(0.96);
+    opacity: 0;
+  }
+  70% {
+    transform: translateY(6%) scale(1.01);
+    opacity: 1;
+  }
+  100% {
+    transform: translateY(0) scale(1);
+    opacity: 1;
+  }
+}
+
+@keyframes pr-lift {
+  to {
+    transform: translateY(-130%);
+    opacity: 0;
+  }
+}
+
+@keyframes pr-sheen {
+  0% {
+    transform: translateX(-120%) skewX(-18deg);
+  }
+  100% {
+    transform: translateX(240%) skewX(-18deg);
+  }
+}
+
+/* One bounce on the medal — a nod, not a party. */
+@keyframes pr-medal {
+  0%,
+  100% {
+    transform: scale(1) rotate(0deg);
+  }
+  35% {
+    transform: scale(1.28) rotate(-9deg);
+  }
+  60% {
+    transform: scale(0.97) rotate(5deg);
+  }
+}
+
+.pr-entering {
+  animation: pr-drop 480ms cubic-bezier(0.18, 0.9, 0.28, 1.2) both;
+}
+
+.pr-leaving {
+  animation: pr-lift 260ms ease-in both;
+}
+
+.pr-sheen {
+  background: linear-gradient(
+    100deg,
+    transparent 20%,
+    rgb(var(--accent) / 0.22) 50%,
+    transparent 80%
+  );
+  animation: pr-sheen 1100ms ease-out 220ms both;
+}
+
+.pr-medal {
+  display: inline-block;
+  animation: pr-medal 620ms cubic-bezier(0.2, 0.9, 0.3, 1.3) 140ms both;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .pr-entering,
+  .pr-leaving,
+  .pr-sheen,
+  .pr-medal {
+    animation: none;
+  }
+  .pr-sheen {
+    display: none;
+  }
+}

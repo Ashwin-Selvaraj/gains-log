@@ -299,3 +299,90 @@ export function lastSessionBefore(sets: SetLike[], before: DateKey): Session | n
   const prior = sets.filter((s) => s.date < before);
   return toSessions(prior)[0] ?? null;
 }
+
+/* ── Live PR detection, for the moment a set is logged ───────────────────── */
+
+export type PRAchievement = {
+  exercise: string;
+  /** 'first' is the first time this lift has ever been logged. */
+  kind: 'weight' | 'e1rm' | 'reps' | 'first';
+  value: number;
+  /** The mark that was beaten. Null on a first-ever log. */
+  previous: number | null;
+  unit: 'kg' | 'reps';
+};
+
+/**
+ * Did the set just logged beat anything?
+ *
+ * Compared against the running best — the standing record *and* everything
+ * already logged today — so working 60 → 62.5 → 65 in one session celebrates
+ * each genuine new best, while a repeat or a back-off set stays quiet.
+ *
+ * Bodyweight lifts are judged on reps, because there is no load to beat.
+ */
+export function detectPR(input: {
+  exercise: string;
+  bodyweight: boolean;
+  /** Records as they stood before today. */
+  priorHeaviestKg: number | null;
+  priorBestReps: number | null;
+  priorBest1RM: number | null;
+  /** Sets already logged today for this exercise, excluding the new one. */
+  todaySets: { reps: number; weightKg: number | null }[];
+  newSet: { reps: number; weightKg: number | null };
+  /** True when nothing has ever been logged for this exercise before today. */
+  neverLogged: boolean;
+}): PRAchievement | null {
+  const { exercise, bodyweight, todaySets, newSet, neverLogged } = input;
+
+  const bestToday = (pick: (s: { reps: number; weightKg: number | null }) => number) =>
+    todaySets.length ? Math.max(...todaySets.map(pick)) : 0;
+
+  if (bodyweight || newSet.weightKg === null) {
+    const running = Math.max(input.priorBestReps ?? 0, bestToday((s) => s.reps));
+    if (newSet.reps > running) {
+      return {
+        exercise,
+        kind: neverLogged && todaySets.length === 0 ? 'first' : 'reps',
+        value: newSet.reps,
+        previous: running > 0 ? running : null,
+        unit: 'reps',
+      };
+    }
+    return null;
+  }
+
+  const runningWeight = Math.max(
+    input.priorHeaviestKg ?? 0,
+    bestToday((s) => s.weightKg ?? 0),
+  );
+  if (newSet.weightKg > runningWeight) {
+    return {
+      exercise,
+      kind: neverLogged && todaySets.length === 0 ? 'first' : 'weight',
+      value: newSet.weightKg,
+      previous: runningWeight > 0 ? runningWeight : null,
+      unit: 'kg',
+    };
+  }
+
+  // Not the heaviest, but possibly the strongest: more reps at a near weight
+  // is real progress that a raw-weight comparison misses entirely.
+  const newE1RM = estimate1RM(newSet.weightKg, newSet.reps) ?? 0;
+  const runningE1RM = Math.max(
+    input.priorBest1RM ?? 0,
+    bestToday((s) => estimate1RM(s.weightKg, s.reps) ?? 0),
+  );
+  if (newE1RM > runningE1RM && runningE1RM > 0) {
+    return {
+      exercise,
+      kind: 'e1rm',
+      value: round1(newE1RM),
+      previous: round1(runningE1RM),
+      unit: 'kg',
+    };
+  }
+
+  return null;
+}

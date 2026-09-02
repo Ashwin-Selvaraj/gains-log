@@ -23,6 +23,19 @@ export type Meal = {
   photoUrl?: string | null;
 };
 
+export type Photo = {
+  id: string;
+  kind: 'progress' | 'meal' | 'other';
+  key: string;
+  url: string;
+  caption: string;
+  width: number | null;
+  height: number | null;
+  bytes: number | null;
+  mealId: string | null;
+  createdAt: string;
+};
+
 export type Macros = {
   kcal: number;
   protein: number;
@@ -81,6 +94,33 @@ export type PlanExercise = {
   reps: string;
 };
 
+export type CarriedExercise = {
+  id: string;
+  name: string;
+  key: string;
+  sets: number;
+  reps: string;
+  fromDate: string;
+};
+
+export type PlanProgress = {
+  sessionName: string | null;
+  restDay: boolean;
+  exercises: {
+    name: string;
+    exerciseKey: string;
+    targetSets: number;
+    reps: string;
+    doneSets: number;
+    complete: boolean;
+  }[];
+  doneCount: number;
+  totalCount: number;
+  complete: boolean;
+  partial: boolean;
+  missed: { name: string; exerciseKey: string; sets: number; reps: string }[];
+};
+
 export type PlanDay = {
   id: string;
   weekday: number;
@@ -96,6 +136,9 @@ export type Settings = {
   caloriesMin: number;
   caloriesMax: number;
   weeklyWorkoutGoal: number;
+  reminderEnabled: boolean;
+  reminderTime: string;
+  timezone: string;
 };
 
 export type Entry = {
@@ -113,6 +156,7 @@ export type Entry = {
   meetings: Meeting[];
   meals: Meal[];
   sets: WorkoutSet[];
+  photos: Photo[];
 };
 
 export type Preset = {
