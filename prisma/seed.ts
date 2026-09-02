@@ -3,7 +3,9 @@
  * already exist rather than creating duplicates.
  */
 import { PrismaClient } from '@prisma/client';
-import { FOODS } from './foods';
+// Extension required: node --experimental-strip-types resolves this at
+// runtime and will not guess it. See allowImportingTsExtensions in tsconfig.
+import { FOODS } from './foods.ts';
 
 const foodKey = (name: string) => name.trim().toLowerCase().replace(/\s+/g, ' ');
 
