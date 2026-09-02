@@ -14,12 +14,12 @@ function csvCell(value: unknown): string {
 const HEADERS = [
   'date',
   'workout_done',
-  'walk_done',
   'learning_done',
   'slept_well',
+  'water_done',
+  'water_litres',
   'weight_kg',
   'sleep_hours',
-  'walk_minutes',
   'workout_note',
   'learning_note',
   'meetings_count',
@@ -27,6 +27,9 @@ const HEADERS = [
   'meals_count',
   'total_calories',
   'total_protein_g',
+  'total_carbs_g',
+  'total_fat_g',
+  'total_fiber_g',
   'meals',
 ];
 
@@ -41,12 +44,12 @@ export async function GET() {
     [
       e.date,
       e.workoutDone,
-      e.walkDone,
       e.learningDone,
       e.sleptWell,
+      e.waterDone,
+      e.waterLitres,
       e.weightKg,
       e.sleepHours,
-      e.walkMinutes,
       e.workoutNote,
       e.learningNote,
       e.meetings.length,
@@ -54,6 +57,9 @@ export async function GET() {
       e.meals.length,
       e.meals.reduce((s, m) => s + (m.calories ?? 0), 0),
       e.meals.reduce((s, m) => s + (m.protein ?? 0), 0),
+      Math.round(e.meals.reduce((s, m) => s + (m.carbs ?? 0), 0) * 10) / 10,
+      Math.round(e.meals.reduce((s, m) => s + (m.fat ?? 0), 0) * 10) / 10,
+      Math.round(e.meals.reduce((s, m) => s + (m.fiber ?? 0), 0) * 10) / 10,
       e.meals
         .map((m) => `${m.name} (${m.calories ?? '?'}kcal/${m.protein ?? '?'}gP)`)
         .join('; '),

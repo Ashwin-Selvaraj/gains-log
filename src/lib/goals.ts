@@ -15,12 +15,12 @@ export const WEEKDAY_NAMES = [
 
 export const HABITS = [
   { key: 'workoutDone', label: 'Workout', icon: '🏋️' },
-  { key: 'walkDone', label: 'Walk', icon: '🚶' },
+  { key: 'waterDone', label: 'Water', icon: '💧' },
   { key: 'learningDone', label: 'Learning', icon: '📘' },
   { key: 'sleptWell', label: 'Slept well', icon: '😴' },
 ] as const;
 
 export type HabitKey = (typeof HABITS)[number]['key'];
 
-export const MEAL_SOURCES = ['manual', 'preset', 'photo-estimate'] as const;
+export const MEAL_SOURCES = ['manual', 'preset', 'photo-estimate', 'food'] as const;
 export type MealSource = (typeof MEAL_SOURCES)[number];

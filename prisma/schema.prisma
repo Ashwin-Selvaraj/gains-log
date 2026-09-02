@@ -21,11 +21,21 @@ model DailyEntry {
   id           String  @id @default(cuid())
   date         String  @unique
   workoutDone  Boolean @default(false)
-  walkDone     Boolean @default(false)
   learningDone Boolean @default(false)
   sleptWell    Boolean @default(false)
+  /// Water replaced Walk as the fourth habit: walking was ambiguous to log,
+  /// hydration is unambiguous and directly relevant to training.
+  waterDone    Boolean @default(false)
+  /// Litres drunk.
+  waterLitres  Float?
   weightKg     Float?
   sleepHours   Float?
+
+  /// Deprecated — the fourth habit before Water. Retained rather than dropped
+  /// because days already logged really did record a walk, and rewriting those
+  /// ticks as water would be inventing history. Hidden in the UI; safe to drop
+  /// once the old days stop mattering.
+  walkDone     Boolean @default(false)
   walkMinutes  Int?
   workoutNote  String  @default("")
   learningNote String  @default("")
@@ -57,7 +67,19 @@ model MealEntry {
   id       String  @id @default(cuid())
   name     String
   calories Int?
-  protein  Int?
+  /// Float, not Int, like the other macros: protein is the metric this whole
+  /// app is built around, and rounding every meal to a whole gram drifts the
+  /// daily total by a couple of grams against a 140 g target.
+  protein  Float?
+  carbs    Float?
+  fat      Float?
+  fiber    Float?
+  /// The Food this was logged from, when it came from the database rather than
+  /// free text. Kept for analytics only — the macros above are a *snapshot*, so
+  /// correcting a Food's values later never silently rewrites logged history.
+  foodId   String?
+  /// Grams actually eaten, which the snapshot macros were computed from.
+  grams    Float?
   /// "manual" | "preset" | "photo-estimate" — kept as text so the schema works
   /// on SQLite as well as Postgres.
   source   String  @default("manual")
@@ -133,12 +155,64 @@ model WorkoutSet {
   @@index([exerciseKey, createdAt])
 }
 
-model MealPreset {
+/// A canonical food with macros stored per 100 g — the single basis everything
+/// derives from, so any portion is just a multiplication. Seeded from published
+/// composition data (see prisma/foods.ts); every value is editable in the app
+/// because published figures are averages and your dosa is not the average dosa.
+model Food {
   id       String @id @default(cuid())
   name     String
+  /// Normalised name for lookup and search. Same idea as WorkoutSet.exerciseKey.
+  nameKey  String @unique
+  /// Comma-separated lowercase alternates ("dosai,plain dosa") so both search
+  /// and the photo estimator can find a food by whatever it was called.
+  aliases  String @default("")
+  category String @default("other")
+
+  kcalPer100g    Float
+  proteinPer100g Float
+  carbsPer100g   Float
+  fatPer100g     Float
+  fiberPer100g   Float @default(0)
+
+  /// Household portion, because nobody weighs 2 idlis. "1 idli" = 45 g.
+  servingLabel String @default("100 g")
+  servingGrams Float  @default(100)
+
+  presetItems MealPresetItem[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([nameKey])
+  @@index([category])
+}
+
+/// A saved combination, e.g. "5 idlis + 2 eggs". Built from Food rows rather
+/// than hardcoded numbers, so fixing a Food's macros fixes every preset using it.
+model MealPreset {
+  id    String @id @default(cuid())
+  name  String
+  items MealPresetItem[]
+
+  /// Legacy manual macros, for presets created before the food database and
+  /// for one-off combinations with no matching Food. Used only when items is empty.
   calories Int?
   protein  Int?
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+}
+
+model MealPresetItem {
+  id       String @id @default(cuid())
+  presetId String
+  preset   MealPreset @relation(fields: [presetId], references: [id], onDelete: Cascade)
+  foodId   String
+  food     Food       @relation(fields: [foodId], references: [id], onDelete: Cascade)
+  grams    Float
+  position Int    @default(0)
+
+  @@index([presetId])
+  @@index([foodId])
 }

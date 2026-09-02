@@ -13,9 +13,46 @@ export type Meal = {
   name: string;
   calories: number | null;
   protein: number | null;
+  carbs?: number | null;
+  fat?: number | null;
+  fiber?: number | null;
+  foodId?: string | null;
+  grams?: number | null;
   source: MealSource;
   /** Absent in the History list — see the comment in api/history/route.ts. */
   photoUrl?: string | null;
+};
+
+export type Macros = {
+  kcal: number;
+  protein: number;
+  carbs: number;
+  fat: number;
+  fiber: number;
+};
+
+export type Food = {
+  id: string;
+  name: string;
+  nameKey: string;
+  aliases: string;
+  category: string;
+  kcalPer100g: number;
+  proteinPer100g: number;
+  carbsPer100g: number;
+  fatPer100g: number;
+  fiberPer100g: number;
+  servingLabel: string;
+  servingGrams: number;
+};
+
+export type PresetItem = {
+  id: string;
+  foodId: string;
+  name: string;
+  grams: number;
+  servingLabel: string;
+  servingGrams: number;
 };
 
 export type WorkoutSet = {
@@ -65,12 +102,12 @@ export type Entry = {
   id: string;
   date: string;
   workoutDone: boolean;
-  walkDone: boolean;
   learningDone: boolean;
   sleptWell: boolean;
+  waterDone: boolean;
+  waterLitres: number | null;
   weightKg: number | null;
   sleepHours: number | null;
-  walkMinutes: number | null;
   workoutNote: string;
   learningNote: string;
   meetings: Meeting[];
@@ -81,15 +118,28 @@ export type Entry = {
 export type Preset = {
   id: string;
   name: string;
-  calories: number | null;
-  protein: number | null;
+  macros: Macros;
+  items: PresetItem[];
+  /** True when the preset predates the food database and has no foods behind it. */
+  legacy: boolean;
+};
+
+export type EstimatedItem = {
+  name: string;
+  foodId: string | null;
+  matchedName: string | null;
+  grams: number;
+  portionLabel: string;
+  macros: Macros;
+  recognised: boolean;
 };
 
 export type PhotoEstimate = {
-  items: string[];
-  name: string;
-  calories: number;
-  protein: number;
+  mealName: string;
+  items: EstimatedItem[];
+  totals: Macros;
   unclear: boolean;
   caveat: string;
+  unrecognised: string[];
 };
+

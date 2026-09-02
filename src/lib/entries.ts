@@ -47,12 +47,12 @@ export function blankEntry(date: DateKey) {
     id: '',
     date,
     workoutDone: false,
-    walkDone: false,
     learningDone: false,
     sleptWell: false,
+    waterDone: false,
+    waterLitres: null,
     weightKg: null,
     sleepHours: null,
-    walkMinutes: null,
     workoutNote: '',
     learningNote: '',
     meetings: [],
@@ -64,12 +64,12 @@ export function blankEntry(date: DateKey) {
 /** An entry with no habits, no numbers and no children isn't worth showing. */
 export function isEmptyEntry(e: {
   workoutDone: boolean;
-  walkDone: boolean;
   learningDone: boolean;
   sleptWell: boolean;
+  waterDone: boolean;
+  waterLitres: number | null;
   weightKg: number | null;
   sleepHours: number | null;
-  walkMinutes: number | null;
   workoutNote: string;
   learningNote: string;
   meetings: unknown[];
@@ -78,12 +78,12 @@ export function isEmptyEntry(e: {
 }) {
   return (
     !e.workoutDone &&
-    !e.walkDone &&
     !e.learningDone &&
     !e.sleptWell &&
+    !e.waterDone &&
+    e.waterLitres === null &&
     e.weightKg === null &&
     e.sleepHours === null &&
-    e.walkMinutes === null &&
     !e.workoutNote &&
     !e.learningNote &&
     e.meetings.length === 0 &&

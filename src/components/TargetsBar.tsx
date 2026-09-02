@@ -1,6 +1,6 @@
 'use client';
 
-import type { Settings } from '@/lib/types';
+import type { Macros, Settings } from '@/lib/types';
 
 function Meter({
   label,
@@ -46,12 +46,10 @@ function Meter({
 
 /** "Am I on track today?" answered without making the user do arithmetic. */
 export function TargetsBar({
-  calories,
-  protein,
+  totals,
   settings,
 }: {
-  calories: number;
-  protein: number;
+  totals: Macros;
   settings: Settings;
 }) {
   const {
@@ -59,6 +57,7 @@ export function TargetsBar({
     caloriesMin: caloriesPerDayMin,
     caloriesMax: caloriesPerDayMax,
   } = settings;
+  const { kcal: calories, protein } = totals;
 
   return (
     <section className="card space-y-3" aria-label="Today's targets">
@@ -78,6 +77,16 @@ export function TargetsBar({
         fraction={calories / caloriesPerDayMax}
         target={`${caloriesPerDayMin.toLocaleString()}–${caloriesPerDayMax.toLocaleString()}`}
       />
+
+      {/* Carbs and fat get no target: on a bulk they're whatever fills the gap
+          once protein and calories are met, so a bar would imply a precision
+          that doesn't exist. Fibre is the one that's genuinely easy to miss. */}
+      <p className="border-t border-line pt-2 text-xs tabular-nums text-muted">
+        Carbs {totals.carbs} g · Fat {totals.fat} g ·{' '}
+        <span className={totals.fiber >= 30 ? 'text-accent' : undefined}>
+          Fibre {totals.fiber} g{totals.fiber >= 30 ? ' ✓' : ' / 30'}
+        </span>
+      </p>
     </section>
   );
 }

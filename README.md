@@ -153,6 +153,13 @@ postgresql://user:password@ep-xxx-pooler.region.aws.neon.tech/neondb?sslmode=req
 Use the pooled one (`-pooler` in the host). Serverless functions open a lot of short
 connections and a direct URL will exhaust the connection limit.
 
+**Append `pgbouncer=true` to that URL.** It disables Prisma's server-side prepared
+statements, which a pooler caches and hands out across connections. Without it,
+any migration that changes a column's *type* makes every subsequent query fail
+with `cached plan must not change result type` — and restarting the app does not
+fix it, because the stale plan is held by the pooler rather than your process.
+Found the hard way when `MealEntry.protein` moved from `Int` to `Float`.
+
 **2. Push this repo to GitHub** — already done if you cloned it from there.
 
 **3. Import it on Vercel.** [vercel.com/new](https://vercel.com/new) → pick the repo →

@@ -10,12 +10,12 @@ type Params = { params: Promise<{ date: string }> };
 /** Fields a client is allowed to set, with the coercion each one needs. */
 const FIELDS = {
   workoutDone: 'bool',
-  walkDone: 'bool',
+  waterDone: 'bool',
   learningDone: 'bool',
   sleptWell: 'bool',
   weightKg: 'float',
   sleepHours: 'float',
-  walkMinutes: 'int',
+  waterLitres: 'float',
   workoutNote: 'text',
   learningNote: 'text',
 } as const;
@@ -55,7 +55,7 @@ export async function PATCH(req: Request, { params }: Params) {
         if (!Number.isFinite(n) || n < 0) {
           return NextResponse.json({ error: `Bad value for ${key}` }, { status: 400 });
         }
-        data[key] = kind === 'int' ? Math.round(n) : n;
+        data[key] = n;
       }
     }
   }

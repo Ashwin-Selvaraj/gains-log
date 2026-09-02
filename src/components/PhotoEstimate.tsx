@@ -1,13 +1,12 @@
 'use client';
 
 import { useRef, useState } from 'react';
-import type { PhotoEstimate as Estimate } from '@/lib/types';
+import type { EstimatedItem, Macros, PhotoEstimate as Estimate } from '@/lib/types';
 
 type Props = {
   onConfirm: (meal: {
     name: string;
-    calories: number | null;
-    protein: number | null;
+    macros: Macros;
     photoUrl: string | null;
   }) => void;
 };
@@ -33,22 +32,32 @@ async function downscale(file: File, maxEdge = 1024): Promise<string> {
   return canvas.toDataURL('image/jpeg', 0.82);
 }
 
+const sum = (items: EstimatedItem[]): Macros =>
+  items.reduce<Macros>(
+    (a, i) => ({
+      kcal: a.kcal + i.macros.kcal,
+      protein: Math.round((a.protein + i.macros.protein) * 10) / 10,
+      carbs: Math.round((a.carbs + i.macros.carbs) * 10) / 10,
+      fat: Math.round((a.fat + i.macros.fat) * 10) / 10,
+      fiber: Math.round((a.fiber + i.macros.fiber) * 10) / 10,
+    }),
+    { kcal: 0, protein: 0, carbs: 0, fat: 0, fiber: 0 },
+  );
+
 export function PhotoEstimate({ onConfirm }: Props) {
   const inputRef = useRef<HTMLInputElement>(null);
   const [photo, setPhoto] = useState<string | null>(null);
   const [estimate, setEstimate] = useState<Estimate | null>(null);
+  const [items, setItems] = useState<EstimatedItem[]>([]);
   const [name, setName] = useState('');
-  const [calories, setCalories] = useState('');
-  const [protein, setProtein] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   function reset() {
     setPhoto(null);
     setEstimate(null);
+    setItems([]);
     setName('');
-    setCalories('');
-    setProtein('');
     setError(null);
     if (inputRef.current) inputRef.current.value = '';
   }
@@ -72,15 +81,38 @@ export function PhotoEstimate({ onConfirm }: Props) {
 
       const est = json as Estimate;
       setEstimate(est);
-      setName(est.name);
-      setCalories(String(est.calories));
-      setProtein(String(est.protein));
+      setItems(est.items);
+      setName(est.mealName);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Something went wrong');
     } finally {
       setBusy(false);
     }
   }
+
+  /** Rescaling grams rescales that item's macros — they're linear in weight. */
+  function setGrams(index: number, nextGrams: number) {
+    setItems((prev) =>
+      prev.map((item, i) => {
+        if (i !== index || item.grams <= 0) return item;
+        const factor = nextGrams / item.grams;
+        return {
+          ...item,
+          grams: nextGrams,
+          portionLabel: `${Math.round(nextGrams)} g`,
+          macros: {
+            kcal: Math.round(item.macros.kcal * factor),
+            protein: Math.round(item.macros.protein * factor * 10) / 10,
+            carbs: Math.round(item.macros.carbs * factor * 10) / 10,
+            fat: Math.round(item.macros.fat * factor * 10) / 10,
+            fiber: Math.round(item.macros.fiber * factor * 10) / 10,
+          },
+        };
+      }),
+    );
+  }
+
+  const totals = sum(items);
 
   return (
     <div className="space-y-3">
@@ -103,7 +135,7 @@ export function PhotoEstimate({ onConfirm }: Props) {
           disabled={busy}
           onClick={() => inputRef.current?.click()}
         >
-          {busy ? 'Asking Claude…' : '📷 Estimate from a photo'}
+          {busy ? 'Identifying…' : '📷 Estimate from a photo'}
         </button>
       )}
 
@@ -125,21 +157,19 @@ export function PhotoEstimate({ onConfirm }: Props) {
               />
             )}
             <div className="min-w-0 text-sm">
-              <p className="text-muted">{estimate.items.join(' · ')}</p>
               <p
-                className={`mt-1 ${
+                className={
                   estimate.unclear ? 'text-amber-600 dark:text-amber-400' : 'text-muted'
-                }`}
+                }
               >
                 {estimate.unclear ? '⚠️ ' : ''}
                 {estimate.caveat}
               </p>
+              <p className="mt-1 text-xs text-muted">
+                Portions are estimates — adjust the grams on anything that looks off.
+              </p>
             </div>
           </div>
-
-          <p className="text-xs text-muted">
-            Rough estimate — check the numbers before saving.
-          </p>
 
           <input
             className="field"
@@ -148,37 +178,63 @@ export function PhotoEstimate({ onConfirm }: Props) {
             placeholder="Meal name"
             aria-label="Meal name"
           />
-          <div className="grid grid-cols-2 gap-2">
-            <input
-              className="field"
-              inputMode="numeric"
-              value={calories}
-              onChange={(e) => setCalories(e.target.value)}
-              placeholder="kcal"
-              aria-label="Calories"
-            />
-            <input
-              className="field"
-              inputMode="numeric"
-              value={protein}
-              onChange={(e) => setProtein(e.target.value)}
-              placeholder="protein g"
-              aria-label="Protein in grams"
-            />
+
+          <ul className="divide-y divide-line">
+            {items.map((item, i) => (
+              <li key={`${item.name}-${i}`} className="flex items-center gap-2 py-2">
+                <div className="min-w-0 flex-1">
+                  <p className="truncate text-sm font-medium">
+                    {item.matchedName ?? item.name}
+                    {!item.recognised && (
+                      <span className="ml-1.5 rounded-full bg-amber-500/15 px-1.5 py-0.5 text-[10px] font-medium text-amber-700 dark:text-amber-400">
+                        not in food list
+                      </span>
+                    )}
+                  </p>
+                  <p className="text-xs tabular-nums text-muted">
+                    {item.recognised
+                      ? `${item.macros.kcal} kcal · ${item.macros.protein} g protein`
+                      : 'No macros — add this food on the Meals tab'}
+                  </p>
+                </div>
+                <input
+                  className="field w-20 shrink-0 px-2 text-center text-sm"
+                  inputMode="numeric"
+                  value={String(Math.round(item.grams))}
+                  onChange={(e) => setGrams(i, Number(e.target.value) || 0)}
+                  aria-label={`Grams of ${item.matchedName ?? item.name}`}
+                />
+                <span className="shrink-0 text-xs text-muted">g</span>
+                <button
+                  type="button"
+                  onClick={() => setItems((prev) => prev.filter((_, idx) => idx !== i))}
+                  aria-label={`Remove ${item.matchedName ?? item.name}`}
+                  className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-muted"
+                >
+                  ×
+                </button>
+              </li>
+            ))}
+          </ul>
+
+          <div className="rounded-xl bg-card p-3">
+            <p className="text-lg font-bold tabular-nums">
+              {totals.kcal} kcal
+              <span className="ml-2 text-sm font-normal text-muted">total</span>
+            </p>
+            <p className="mt-0.5 text-sm tabular-nums text-muted">
+              Protein <strong className="text-ink">{totals.protein} g</strong> · Carbs{' '}
+              {totals.carbs} g · Fat {totals.fat} g · Fibre {totals.fiber} g
+            </p>
           </div>
 
           <div className="flex gap-2">
             <button
               type="button"
               className="btn-primary flex-1"
-              disabled={!name.trim()}
+              disabled={!name.trim() || items.length === 0}
               onClick={() => {
-                onConfirm({
-                  name: name.trim(),
-                  calories: calories === '' ? null : Number(calories),
-                  protein: protein === '' ? null : Number(protein),
-                  photoUrl: photo,
-                });
+                onConfirm({ name: name.trim(), macros: totals, photoUrl: photo });
                 reset();
               }}
             >

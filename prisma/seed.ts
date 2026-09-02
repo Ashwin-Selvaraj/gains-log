@@ -3,15 +3,25 @@
  * already exist rather than creating duplicates.
  */
 import { PrismaClient } from '@prisma/client';
+import { FOODS } from './foods';
+
+const foodKey = (name: string) => name.trim().toLowerCase().replace(/\s+/g, ' ');
 
 const prisma = new PrismaClient();
 
-const PRESETS = [
-  { name: '5 idlis + 2 eggs', calories: 520, protein: 26 },
-  { name: 'oats + 3 bananas + whey', calories: 720, protein: 45 },
-  { name: 'Rice + dal + curd', calories: 640, protein: 22 },
-  { name: 'Whey shake', calories: 130, protein: 25 },
-  { name: '4 eggs', calories: 310, protein: 25 },
+/**
+ * Presets are combinations of real Food rows now, not hardcoded numbers — so
+ * correcting a food's macros corrects every preset built on it. Grams come from
+ * each food's household serving (5 idlis = 5 x 45 g).
+ */
+const PRESETS: { name: string; items: [foodName: string, grams: number][] }[] = [
+  { name: '5 idlis + 2 eggs', items: [['Idli', 225], ['Egg, whole boiled', 100]] },
+  { name: 'Oats + 3 bananas + whey', items: [['Oats, dry', 80], ['Banana', 360], ['Whey protein powder', 30]] },
+  { name: 'Rice + dal + curd', items: [['Rice, cooked white', 300], ['Toor dal, cooked', 150], ['Curd', 150]] },
+  { name: 'Whey shake', items: [['Whey protein powder', 30], ['Milk, toned', 200]] },
+  { name: '4 eggs', items: [['Egg, whole boiled', 200]] },
+  { name: '2 dosa + sambar + chutney', items: [['Dosa, plain', 140], ['Sambar', 150], ['Coconut chutney', 30]] },
+  { name: 'Chicken + rice', items: [['Chicken breast, cooked', 200], ['Rice, cooked white', 250]] },
 ];
 
 /**
@@ -62,11 +72,48 @@ async function main() {
     console.log(`+ plan: ${day.name} (weekday ${day.weekday})`);
   }
 
+  // --- foods -------------------------------------------------------------
+  let added = 0;
+  for (const [name, aliases, category, kcal, protein, carbs, fat, fiber, servingLabel, servingGrams] of FOODS) {
+    const nameKey = foodKey(name);
+    await prisma.food.upsert({
+      where: { nameKey },
+      // Upsert rather than skip-if-exists: correcting a value in foods.ts and
+      // re-seeding should actually correct it in the database.
+      create: {
+        name, nameKey, aliases, category,
+        kcalPer100g: kcal, proteinPer100g: protein, carbsPer100g: carbs,
+        fatPer100g: fat, fiberPer100g: fiber, servingLabel, servingGrams,
+      },
+      update: {
+        name, aliases, category,
+        kcalPer100g: kcal, proteinPer100g: protein, carbsPer100g: carbs,
+        fatPer100g: fat, fiberPer100g: fiber, servingLabel, servingGrams,
+      },
+    });
+    added++;
+  }
+  console.log(`+ ${added} foods`);
+
+  // --- presets, built from those foods ------------------------------------
   for (const preset of PRESETS) {
     const existing = await prisma.mealPreset.findFirst({ where: { name: preset.name } });
     if (existing) continue;
-    await prisma.mealPreset.create({ data: preset });
-    console.log(`+ ${preset.name}`);
+
+    const items = [];
+    for (const [foodName, grams] of preset.items) {
+      const food = await prisma.food.findUnique({ where: { nameKey: foodKey(foodName) } });
+      if (!food) {
+        console.warn(`  ! preset "${preset.name}" references unknown food "${foodName}"`);
+        continue;
+      }
+      items.push({ foodId: food.id, grams, position: items.length });
+    }
+
+    await prisma.mealPreset.create({
+      data: { name: preset.name, items: { create: items } },
+    });
+    console.log(`+ preset: ${preset.name} (${items.length} foods)`);
   }
 }
 

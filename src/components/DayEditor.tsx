@@ -6,6 +6,7 @@ import { mutate, OfflineQueuedError } from '@/lib/sync';
 import type {
   Entry,
   ExerciseContext,
+  Macros,
   Meal,
   Meeting,
   PlanDay,
@@ -15,6 +16,7 @@ import type {
 } from '@/lib/types';
 import { StampButton } from '@/components/StampButton';
 import { PhotoEstimate } from '@/components/PhotoEstimate';
+import { FoodPicker } from '@/components/FoodPicker';
 import { TargetsBar } from '@/components/TargetsBar';
 import { WorkoutCard } from '@/components/WorkoutCard';
 import { SaveBar, type SaveState } from '@/components/SaveBar';
@@ -136,12 +138,17 @@ export function DayEditor({
     };
   }, []);
 
+  /**
+   * Accepts any of the three logging shapes — { foodId, grams }, { presetId },
+   * or typed macros. The server computes and snapshots the macros in every
+   * case; `optimistic` is only what we draw until it answers.
+   */
   const addMeal = useCallback(
-    async (meal: Omit<Meal, 'id'>) => {
-      const optimistic: Meal = { ...meal, id: `tmp-${crypto.randomUUID()}` };
+    async (payload: Record<string, unknown>, optimisticMeal: Omit<Meal, 'id'>) => {
+      const optimistic: Meal = { ...optimisticMeal, id: `tmp-${crypto.randomUUID()}` };
       setEntry((prev) => ({ ...prev, meals: [...prev.meals, optimistic] }));
       try {
-        const saved = await mutate<Meal>(`/api/entries/${date}/meals`, 'POST', meal);
+        const saved = await mutate<Meal>(`/api/entries/${date}/meals`, 'POST', payload);
         setEntry((prev) => ({
           ...prev,
           meals: prev.meals.map((m) => (m.id === optimistic.id ? saved : m)),
@@ -231,10 +238,17 @@ export function DayEditor({
   );
 
   const totals = useMemo(
-    () => ({
-      calories: entry.meals.reduce((s, m) => s + (m.calories ?? 0), 0),
-      protein: entry.meals.reduce((s, m) => s + (m.protein ?? 0), 0),
-    }),
+    () =>
+      entry.meals.reduce(
+        (acc, m) => ({
+          kcal: acc.kcal + (m.calories ?? 0),
+          protein: Math.round((acc.protein + (m.protein ?? 0)) * 10) / 10,
+          carbs: Math.round((acc.carbs + (m.carbs ?? 0)) * 10) / 10,
+          fat: Math.round((acc.fat + (m.fat ?? 0)) * 10) / 10,
+          fiber: Math.round((acc.fiber + (m.fiber ?? 0)) * 10) / 10,
+        }),
+        { kcal: 0, protein: 0, carbs: 0, fat: 0, fiber: 0 },
+      ),
     [entry.meals],
   );
 
@@ -270,11 +284,7 @@ export function DayEditor({
       />
 
       {showTargets && settings && (
-        <TargetsBar
-          calories={totals.calories}
-          protein={totals.protein}
-          settings={settings}
-        />
+        <TargetsBar totals={totals} settings={settings} />
       )}
 
       <section className="card space-y-4">
@@ -294,11 +304,11 @@ export function DayEditor({
             onChange={(v) => stage('sleepHours', v)}
           />
           <NumberField
-            label="Walk"
-            unit="min"
-            value={entry.walkMinutes}
-            step="5"
-            onChange={(v) => stage('walkMinutes', v)}
+            label="Water"
+            unit="L"
+            value={entry.waterLitres}
+            step="0.25"
+            onChange={(v) => stage('waterLitres', v)}
           />
         </div>
 
@@ -464,73 +474,90 @@ function MealsSection({
 }: {
   meals: Meal[];
   presets: Preset[];
-  totals: { calories: number; protein: number };
-  onAdd: (meal: Omit<Meal, 'id'>) => void;
+  totals: Macros;
+  onAdd: (payload: Record<string, unknown>, optimistic: Omit<Meal, 'id'>) => void;
   onRemove: (id: string) => void;
 }) {
+  const [mode, setMode] = useState<'none' | 'search' | 'manual'>('none');
   const [name, setName] = useState('');
   const [calories, setCalories] = useState('');
   const [protein, setProtein] = useState('');
-  const [manualOpen, setManualOpen] = useState(false);
 
   function submitManual(e: React.FormEvent) {
     e.preventDefault();
     if (!name.trim()) return;
-    onAdd({
+    const payload = {
       name: name.trim(),
       calories: calories === '' ? null : Number(calories),
       protein: protein === '' ? null : Number(protein),
+      source: 'manual',
+    };
+    onAdd(payload, {
+      name: payload.name,
+      calories: payload.calories,
+      protein: payload.protein,
       source: 'manual',
       photoUrl: null,
     });
     setName('');
     setCalories('');
     setProtein('');
+    setMode('none');
   }
 
   return (
     <section className="card space-y-3">
-      <div className="flex items-baseline justify-between">
+      <div className="flex items-baseline justify-between gap-2">
         <h2 className="text-base font-semibold">Meals</h2>
-        <p className="text-sm tabular-nums text-muted">
-          {totals.calories} kcal · {totals.protein}g protein
+        <p className="shrink-0 text-sm tabular-nums text-muted">
+          {totals.kcal} kcal · {totals.protein}g protein
         </p>
       </div>
 
       {meals.length > 0 && (
-        <ul className="divide-y divide-line">
-          {meals.map((m) => (
-            <li key={m.id} className="flex items-center gap-3 py-2">
-              {m.photoUrl ? (
-                /* eslint-disable-next-line @next/next/no-img-element */
-                <img
-                  src={m.photoUrl}
-                  alt=""
-                  className="h-10 w-10 shrink-0 rounded-lg object-cover"
-                />
-              ) : (
-                <span aria-hidden className="w-10 shrink-0 text-center text-lg">
-                  {m.source === 'preset' ? '⭐' : '🍽️'}
-                </span>
-              )}
-              <div className="min-w-0 flex-1">
-                <p className="truncate text-sm font-medium">{m.name}</p>
-                <p className="text-xs tabular-nums text-muted">
-                  {m.calories ?? '—'} kcal · {m.protein ?? '—'}g protein
-                </p>
-              </div>
-              <button
-                type="button"
-                onClick={() => onRemove(m.id)}
-                aria-label={`Remove ${m.name}`}
-                className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full
-                           text-muted hover:bg-line"
-              >
-                ×
-              </button>
-            </li>
-          ))}
-        </ul>
+        <>
+          <ul className="divide-y divide-line">
+            {meals.map((m) => (
+              <li key={m.id} className="flex items-center gap-3 py-2">
+                {m.photoUrl ? (
+                  /* eslint-disable-next-line @next/next/no-img-element */
+                  <img
+                    src={m.photoUrl}
+                    alt=""
+                    className="h-10 w-10 shrink-0 rounded-lg object-cover"
+                  />
+                ) : (
+                  <span aria-hidden className="w-10 shrink-0 text-center text-lg">
+                    {m.source === 'preset' ? '⭐' : m.source === 'food' ? '🥘' : '🍽️'}
+                  </span>
+                )}
+                <div className="min-w-0 flex-1">
+                  <p className="truncate text-sm font-medium">{m.name}</p>
+                  <p className="text-xs tabular-nums text-muted">
+                    {m.calories ?? '—'} kcal · P {m.protein ?? '—'}
+                    {m.carbs != null && ` · C ${m.carbs}`}
+                    {m.fat != null && ` · F ${m.fat}`}
+                    {m.fiber != null && m.fiber > 0 && ` · Fib ${m.fiber}`}
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => onRemove(m.id)}
+                  aria-label={`Remove ${m.name}`}
+                  className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full
+                             text-muted hover:bg-line"
+                >
+                  ×
+                </button>
+              </li>
+            ))}
+          </ul>
+
+          {/* The full macro split, once there is anything to split. */}
+          <p className="text-xs tabular-nums text-muted">
+            Carbs {totals.carbs} g · Fat {totals.fat} g · Fibre {totals.fiber} g
+          </p>
+        </>
       )}
 
       {presets.length > 0 && (
@@ -542,20 +569,26 @@ function MealsSection({
                 key={p.id}
                 type="button"
                 onClick={() =>
-                  onAdd({
-                    name: p.name,
-                    calories: p.calories,
-                    protein: p.protein,
-                    source: 'preset',
-                    photoUrl: null,
-                  })
+                  onAdd(
+                    { presetId: p.id },
+                    {
+                      name: p.name,
+                      calories: p.macros.kcal,
+                      protein: p.macros.protein,
+                      carbs: p.macros.carbs,
+                      fat: p.macros.fat,
+                      fiber: p.macros.fiber,
+                      source: 'preset',
+                      photoUrl: null,
+                    },
+                  )
                 }
                 className="min-h-[44px] rounded-xl border border-line bg-surface px-3 text-sm
                            font-medium active:scale-[0.97]"
               >
                 {p.name}
                 <span className="ml-1.5 text-xs font-normal text-muted">
-                  {p.protein ?? '—'}g
+                  {p.macros.protein}g
                 </span>
               </button>
             ))}
@@ -563,11 +596,61 @@ function MealsSection({
         </div>
       )}
 
+      {mode === 'search' ? (
+        <FoodPicker
+          onCancel={() => setMode('none')}
+          onPick={({ foodId, grams, name: foodName, macros }) =>
+            onAdd(
+              { foodId, grams },
+              {
+                name: foodName,
+                calories: macros.kcal,
+                protein: macros.protein,
+                carbs: macros.carbs,
+                fat: macros.fat,
+                fiber: macros.fiber,
+                grams,
+                foodId,
+                source: 'food',
+                photoUrl: null,
+              },
+            )
+          }
+        />
+      ) : (
+        <button type="button" className="btn-primary w-full" onClick={() => setMode('search')}>
+          🔍 Search food
+        </button>
+      )}
+
       <PhotoEstimate
-        onConfirm={(meal) => onAdd({ ...meal, source: 'photo-estimate' })}
+        onConfirm={({ name: mealName, macros, photoUrl }) =>
+          onAdd(
+            {
+              name: mealName,
+              calories: macros.kcal,
+              protein: macros.protein,
+              carbs: macros.carbs,
+              fat: macros.fat,
+              fiber: macros.fiber,
+              photoUrl,
+              source: 'photo-estimate',
+            },
+            {
+              name: mealName,
+              calories: macros.kcal,
+              protein: macros.protein,
+              carbs: macros.carbs,
+              fat: macros.fat,
+              fiber: macros.fiber,
+              source: 'photo-estimate',
+              photoUrl,
+            },
+          )
+        }
       />
 
-      {manualOpen ? (
+      {mode === 'manual' ? (
         <form onSubmit={submitManual} className="space-y-2">
           <input
             className="field"
@@ -600,13 +683,15 @@ function MealsSection({
           </div>
         </form>
       ) : (
-        <button
-          type="button"
-          className="btn-quiet w-full"
-          onClick={() => setManualOpen(true)}
-        >
-          ✏️ Type a meal
-        </button>
+        mode === 'none' && (
+          <button
+            type="button"
+            className="btn-quiet w-full"
+            onClick={() => setMode('manual')}
+          >
+            ✏️ Type it manually
+          </button>
+        )
       )}
     </section>
   );
