@@ -75,7 +75,9 @@ export function DayEditor({
    * each time. Held in a ref rather than state so the flush triggers below can
    * read the latest value without re-subscribing on every keystroke.
    */
-  const pending = useRef<Record<string, unknown>>({});
+  /** Fields edited since the last write. Typed as a partial Entry so what goes
+   *  into it is the same shape as what comes out of the API. */
+  const pending = useRef<Partial<Entry>>({});
 
   const report = useCallback((err: unknown) => {
     // A queued write is a success from the user's point of view.
@@ -128,9 +130,17 @@ export function DayEditor({
   const flushRef = useRef(flush);
   flushRef.current = flush;
 
-  /** Applies the change locally at once; the write waits for Save or a nav away. */
-  const stage = useCallback((field: keyof Entry, value: unknown) => {
-    setEntry((prev) => ({ ...prev, [field]: value }) as Entry);
+  /**
+   * Applies the change locally at once; the write waits for Save or a nav away.
+   *
+   * Generic over the field, so `value` must be that field's actual type. It
+   * used to take `unknown` and cast the result `as Entry`, which let a numeric
+   * field be staged as a string: the value went into `entry` as "2.5", and any
+   * component reading it back and calling a number method on it crashed the
+   * page. The cast was the reason TypeScript never noticed.
+   */
+  const stage = useCallback(<K extends keyof Entry>(field: K, value: Entry[K]) => {
+    setEntry((prev) => ({ ...prev, [field]: value }));
     pending.current[field] = value;
     setSaveState('dirty');
   }, []);
@@ -419,7 +429,7 @@ export function DayEditor({
           {...MEASURES.water}
           value={entry.waterLitres}
           onChange={(litres) => {
-            stage('waterLitres', litres === null ? '' : String(litres));
+            stage('waterLitres', litres);
             // The tick is derived, not separately toggled. Keeping a manual
             // Water stamp alongside a litres figure let the two disagree —
             // ticked but zero litres, or two litres and no tick — and the
@@ -432,7 +442,7 @@ export function DayEditor({
           <MeasureSlider
             {...MEASURES.sleep}
             value={entry.sleepHours}
-            onChange={(hours) => stage('sleepHours', hours === null ? '' : String(hours))}
+            onChange={(hours) => stage('sleepHours', hours)}
           />
 
           {/* Hours and quality are different facts: eight restless hours is not
@@ -493,7 +503,7 @@ function NumberField({
   unit: string;
   value: number | null;
   step: string;
-  onChange: (value: string) => void;
+  onChange: (value: number | null) => void;
 }) {
   // Kept as a string so a half-typed "7." doesn't get normalised away mid-entry.
   const [text, setText] = useState(value === null ? '' : String(value));
@@ -512,7 +522,11 @@ function NumberField({
         value={text}
         onChange={(e) => {
           setText(e.target.value);
-          onChange(e.target.value);
+          // The text stays local so a half-typed "7." survives; only a usable
+          // number (or a cleared field) is handed upwards.
+          const raw = e.target.value.trim();
+          const n = Number(raw);
+          onChange(raw === '' || !Number.isFinite(n) ? null : n);
         }}
       />
     </div>

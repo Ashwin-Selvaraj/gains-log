@@ -1,3 +1,5 @@
+import { BackgroundArt, Wordmark } from '@/components/Wordmark';
+
 /**
  * The cold-start screen.
  *
@@ -9,26 +11,18 @@
  */
 export function Splash() {
   return (
-    <div
-      aria-hidden
-      className="splash fixed inset-0 z-[60] overflow-hidden bg-black"
-    >
-      {/* eslint-disable-next-line @next/next/no-img-element -- next/image adds a
-          client wrapper and a srcset for one full-bleed art asset that is
-          already sized for the job; a plain img paints sooner. */}
-      <img
-        src="/onboarding.webp"
-        alt=""
-        className="absolute inset-0 h-full w-full scale-105 object-cover opacity-80"
-      />
-      <div className="absolute inset-0 bg-gradient-to-b from-black/70 via-black/30 to-black/95" />
+    <div aria-hidden className="splash fixed inset-0 z-[60] overflow-hidden bg-black">
+      <BackgroundArt className="absolute inset-0 h-full w-full scale-105 object-cover opacity-90" />
+      {/* Light at the top where the artwork's subject is, heavy at the bottom
+          where the wordmark sits. */}
+      <div className="absolute inset-0 bg-gradient-to-b from-black/40 via-transparent to-black" />
 
-      <div className="absolute inset-x-0 bottom-[14%] flex flex-col items-center px-8">
+      <div className="absolute inset-x-0 bottom-[12%] flex flex-col items-center px-8">
         <h1
-          className="splash-item text-center text-[2.1rem] font-black uppercase leading-none tracking-[0.16em] text-white"
+          className="splash-item text-center text-[2.6rem] text-white"
           style={{ animationDelay: '120ms' }}
         >
-          Gains Log
+          <Wordmark tracking="0.1em" />
         </h1>
         <div
           className="splash-item mt-4 h-px w-24"

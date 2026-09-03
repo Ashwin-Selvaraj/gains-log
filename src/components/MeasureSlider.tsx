@@ -13,6 +13,11 @@
  * The number field stays available beside it: a slider is fast but imprecise,
  * and someone who tracks intake exactly should not be forced to nudge a thumb.
  */
+/** Trims the trailing zero from quarter steps: 2.50 -> 2.5, 2.25 stays. */
+function formatAmount(n: number): string {
+  return n % 1 === 0 ? String(n) : n.toFixed(2).replace(/0$/, '');
+}
+
 export function MeasureSlider({
   icon,
   label,
@@ -33,7 +38,10 @@ export function MeasureSlider({
   target?: number;
   onChange: (value: number | null) => void;
 }) {
-  const current = value ?? 0;
+  // Coerced rather than trusted. The component owns how it formats this, and
+  // a non-number arriving here should degrade to 0, not throw inside render and
+  // take the whole page down with it.
+  const current = typeof value === 'number' && Number.isFinite(value) ? value : 0;
   const pct = Math.min(100, (current / max) * 100);
   const met = target != null && current >= target;
 
@@ -48,7 +56,7 @@ export function MeasureSlider({
           <b
             className={`text-lg font-semibold ${met ? 'text-accent' : 'text-ink'}`}
           >
-            {value == null ? '—' : current % 1 === 0 ? current : current.toFixed(2).replace(/0$/, '')}
+            {value == null ? '—' : formatAmount(current)}
           </b>{' '}
           {unit}
           {target != null && (

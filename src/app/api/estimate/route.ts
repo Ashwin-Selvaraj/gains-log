@@ -3,6 +3,7 @@ import Anthropic from '@anthropic-ai/sdk';
 import { prisma } from '@/lib/prisma';
 import { macrosFor, matchFood, sumMacros, type Macros } from '@/lib/nutrition';
 import { requireUser, unauthorized } from '@/lib/auth';
+import { getQuota, recordAiUse } from '@/lib/ai-quota';
 
 export const dynamic = 'force-dynamic';
 export const maxDuration = 60;
@@ -103,6 +104,23 @@ export async function POST(req: Request) {
     );
   }
 
+  /**
+   * Checked before the image is even read. A vision call is the one thing here
+   * that costs money per use, so the cheapest possible rejection is the right
+   * one — and the message says when it resets, because "limit reached" without
+   * a "come back when" is a dead end.
+   */
+  const quota = await getQuota(user);
+  if (!quota.unlimited && quota.remaining !== null && quota.remaining <= 0) {
+    return NextResponse.json(
+      {
+        error: `You've used all ${quota.limit} photo estimates for today. It resets at midnight — log this meal from your presets or the food list instead.`,
+        quota,
+      },
+      { status: 429 },
+    );
+  }
+
   const body = (await req.json()) as { image?: string; mediaType?: string };
   const image = body.image;
   if (!image) return NextResponse.json({ error: 'image required' }, { status: 400 });
@@ -151,9 +169,18 @@ export async function POST(req: Request) {
       prisma.food.findMany({ where: { OR: [{ userId: null }, { userId: user.id }] } }),
     ]);
 
+    // Counted here: Anthropic has answered, so the call has been paid for
+    // whatever happens to the parsing below. Anything that failed earlier —
+    // an unsupported file, a connection error — never reaches this line and so
+    // never costs the user one of their five.
+    const spent = await recordAiUse(user);
+
     if (response.stop_reason === 'refusal') {
       return NextResponse.json(
-        { error: 'Claude declined to analyse this image. Log the meal manually instead.' },
+        {
+          error: 'Claude declined to analyse this image. Log the meal manually instead.',
+          quota: spent,
+        },
         { status: 422 },
       );
     }
@@ -168,7 +195,7 @@ export async function POST(req: Request) {
       vision = JSON.parse(text) as VisionResult;
     } catch {
       return NextResponse.json(
-        { error: 'Could not read an estimate from the response. Try again.' },
+        { error: 'Could not read an estimate from the response. Try again.', quota: spent },
         { status: 502 },
       );
     }
@@ -215,6 +242,7 @@ export async function POST(req: Request) {
       // Surfaced so the UI can offer to add them to the food table, which is
       // how the database gets better at your actual diet over time.
       unrecognised,
+      quota: spent,
     });
   } catch (err) {
     if (err instanceof Anthropic.RateLimitError) {

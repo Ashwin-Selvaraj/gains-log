@@ -425,6 +425,7 @@ model User {
   settings      Settings?
   subscriptions PushSubscription[]
   notifications NotificationLog[]
+  aiUsage       AiUsage[]
 }
 
 model Account {
@@ -466,9 +467,29 @@ model VerificationToken {
   @@unique([identifier, token])
 }
 
-/// The invite list. Sign-in is refused for any address not present here, so a
-/// stranger with the URL cannot create an account, spend the Anthropic credits
-/// or fill the R2 bucket.
+/// One row per person per day, counting AI photo estimates.
+///
+/// Vision calls are the only thing in this app that costs money per use, so
+/// they are the only thing metered. Counted in a table rather than in memory
+/// because the app restarts on every deploy and runs behind a process manager
+/// that can restart it at any time — an in-memory counter would hand everyone
+/// a fresh allowance each time that happened.
+model AiUsage {
+  id     String @id @default(cuid())
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  /// Date key in the *user's* timezone, so the allowance resets at their
+  /// midnight rather than the server's — the server is in Singapore.
+  date  String
+  count Int    @default(0)
+
+  updatedAt DateTime @updatedAt
+
+  @@unique([userId, date])
+  @@index([userId, date])
+}
+
 /// The invite list. Sole source of truth for who may sign in — there is no
 /// env-var equivalent, so access is managed from the admin screen rather than
 /// by editing a file on the server and restarting.

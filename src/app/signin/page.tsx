@@ -1,5 +1,6 @@
 import { redirect } from 'next/navigation';
 import { auth, signIn } from '@/lib/auth';
+import { BackgroundArt, Wordmark } from '@/components/Wordmark';
 
 export const metadata = { title: 'Sign in' };
 
@@ -9,12 +10,13 @@ export const metadata = { title: 'Sign in' };
  * It was previously a min-height block inside the app's normal padded column,
  * which on a phone left it sitting above centre with the page still scrollable
  * behind it. Anchoring to the viewport with `fixed inset-0` makes centring
- * exact at any height and removes the scroll outright — there is nothing below
- * the fold to reach, so being able to drag the screen only felt broken.
+ * exact at any height and removes the scroll outright.
  *
- * The page paints its own dark ground rather than inheriting the theme: the
- * artwork is dark, and a light-mode surface behind it would show as a pale
- * border at the edges.
+ * The content sits in a translucent panel rather than directly on the photo.
+ * Both artworks carry their own lettering — DISCIPLINE BUILDS FREEDOM, FOCUS.
+ * FUEL. EXECUTE. — and text laid straight over them competed with it. The
+ * panel also means legibility does not depend on which part of which crop
+ * happens to fall behind the button at a given screen size.
  */
 export default async function SignInPage({
   searchParams,
@@ -28,34 +30,24 @@ export default async function SignInPage({
 
   return (
     <div className="fixed inset-0 z-40 overflow-hidden bg-black">
-      {/* A single panel cropped from the poster, deliberately soft: it is
-          backdrop, not subject, and the blur also hides that the source panel
-          is only ~314px wide. eslint-disable because next/image's client
-          wrapper and srcset buy nothing for one fixed full-bleed asset. */}
-      {/* eslint-disable-next-line @next/next/no-img-element */}
-      <img
-        src="/signin-bg.webp"
-        alt=""
-        aria-hidden
-        className="absolute inset-0 h-full w-full scale-110 object-cover opacity-[0.55] blur-[1.5px]"
-      />
-      {/* Two passes: a vertical wash so the text sits on near-black at top and
-          bottom, and a radial vignette that pulls the eye to the middle. */}
-      <div className="absolute inset-0 bg-gradient-to-b from-black/70 via-black/25 to-black/90" />
-      <div
-        className="absolute inset-0"
-        style={{
-          background:
-            'radial-gradient(115% 60% at 50% 44%, transparent 0%, rgba(0,0,0,0.55) 100%)',
-        }}
-      />
+      {/* The portrait crop is wider than a phone viewport, so `cover` has to
+          trim horizontally. Biased right so the artwork's own DISCIPLINE /
+          FREEDOM lettering stays whole — centring it sliced the last letters
+          off, which reads as a mistake rather than a crop. The lion loses part
+          of its mane instead, which it can afford. */}
+      <BackgroundArt className="absolute inset-0 h-full w-full object-cover object-[80%_center] md:object-center" />
+
+      {/* Keeps the subject visible up top and darkens towards the panel. */}
+      <div className="absolute inset-0 bg-gradient-to-b from-black/30 via-black/45 to-black/90" />
 
       {/* h-dvh, not h-screen: on iOS Safari the dynamic unit accounts for the
-          address bar, so "centred" stays centred as it collapses. */}
-      <div className="relative flex h-dvh flex-col items-center justify-center px-7">
-        <div className="w-full max-w-[22rem]">
+          address bar, so the layout stays put as it collapses. On a phone the
+          panel sits low, clear of the face and the lion; from `md` up it
+          centres in the landscape crop. */}
+      <div className="relative flex h-dvh flex-col justify-end px-6 pb-12 md:items-center md:justify-center md:pb-0">
+        <div className="w-full max-w-[23rem] rounded-3xl border border-white/10 bg-black/45 p-7 shadow-[0_24px_70px_-20px_rgba(0,0,0,0.95)] backdrop-blur-xl md:mx-auto">
           <div className="flex flex-col items-center text-center">
-            <svg viewBox="0 0 512 512" className="h-14 w-14 shrink-0" aria-hidden>
+            <svg viewBox="0 0 512 512" className="h-12 w-12 shrink-0" aria-hidden>
               <rect width="512" height="512" rx="112" fill="#0b0b0d" />
               <rect
                 width="512"
@@ -63,7 +55,7 @@ export default async function SignInPage({
                 rx="112"
                 fill="none"
                 stroke="rgb(var(--ember))"
-                strokeOpacity="0.35"
+                strokeOpacity="0.4"
                 strokeWidth="10"
               />
               <g stroke="rgb(var(--ember))" strokeLinecap="round" fill="none">
@@ -73,19 +65,19 @@ export default async function SignInPage({
               </g>
             </svg>
 
-            <h1 className="mt-5 text-[2rem] font-black uppercase leading-none tracking-[0.15em] text-white">
-              Gains Log
+            <h1 className="mt-4 text-[2.15rem] text-white">
+              <Wordmark tracking="0.1em" />
             </h1>
 
             <div
-              className="mt-4 h-px w-20"
+              className="mt-3.5 h-px w-20"
               style={{
                 background:
                   'linear-gradient(90deg, transparent, rgb(var(--ember)), transparent)',
               }}
             />
 
-            <p className="mt-4 text-[0.68rem] font-semibold uppercase tracking-[0.3em] text-white/45">
+            <p className="mt-3.5 text-[0.66rem] font-semibold uppercase tracking-[0.28em] text-white/45">
               Stronger than yesterday
             </p>
           </div>
@@ -93,7 +85,7 @@ export default async function SignInPage({
           {error && (
             <p
               role="alert"
-              className="mt-7 rounded-xl border border-amber-400/30 bg-amber-400/10 px-3.5 py-2.5 text-center text-sm text-amber-200"
+              className="mt-6 rounded-xl border border-amber-400/30 bg-amber-400/10 px-3.5 py-2.5 text-center text-sm text-amber-200"
             >
               {error === 'AccessDenied'
                 ? 'That account isn’t on the invite list. Ask Ashwin to add your email, then try again.'
@@ -102,7 +94,7 @@ export default async function SignInPage({
           )}
 
           <form
-            className="mt-9"
+            className="mt-7"
             action={async () => {
               'use server';
               await signIn('google', { redirectTo: callbackUrl || '/' });
@@ -110,7 +102,7 @@ export default async function SignInPage({
           >
             <button
               type="submit"
-              className="btn w-full gap-3 rounded-2xl bg-white py-3.5 font-semibold text-neutral-900 shadow-[0_10px_40px_-12px_rgba(0,0,0,0.9)] transition hover:bg-white/92"
+              className="btn w-full gap-3 rounded-2xl bg-white py-3.5 font-semibold text-neutral-900 shadow-[0_10px_40px_-12px_rgba(0,0,0,0.9)] transition hover:bg-white/90"
             >
               <svg viewBox="0 0 24 24" className="h-5 w-5 shrink-0" aria-hidden>
                 <path fill="#4285F4" d="M23.5 12.3c0-.8-.1-1.6-.2-2.3H12v4.5h6.4a5.5 5.5 0 0 1-2.4 3.6v3h3.9c2.3-2.1 3.6-5.2 3.6-8.8Z" />
@@ -124,7 +116,7 @@ export default async function SignInPage({
 
           {/* Was one grey sentence. As two badges the same two facts read as
               assurances rather than fine print, which is what they are. */}
-          <div className="mt-7 flex items-center justify-center gap-2.5">
+          <div className="mt-6 flex items-center justify-center gap-2.5">
             <Badge
               label="Invite only"
               path="M12 2 4 5v6c0 4.4 3.1 8.5 8 10 4.9-1.5 8-5.6 8-10V5l-8-3Z"
@@ -142,7 +134,7 @@ export default async function SignInPage({
 
 function Badge({ label, path }: { label: string; path: string }) {
   return (
-    <span className="inline-flex items-center gap-1.5 rounded-full border border-white/10 bg-white/[0.06] px-3 py-1.5 text-[0.65rem] font-medium uppercase tracking-[0.12em] text-white/55 backdrop-blur-sm">
+    <span className="inline-flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded-full border border-white/10 bg-white/[0.07] px-2.5 py-1.5 text-[0.6rem] font-medium uppercase tracking-[0.1em] text-white/60">
       <svg viewBox="0 0 24 24" className="h-3 w-3 shrink-0" fill="currentColor" aria-hidden>
         <path d={path} />
       </svg>

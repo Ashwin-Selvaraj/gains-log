@@ -1,6 +1,6 @@
 'use client';
 
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import type { EstimatedItem, Macros, PhotoEstimate as Estimate } from '@/lib/types';
 
 type Props = {
@@ -44,6 +44,14 @@ const sum = (items: EstimatedItem[]): Macros =>
     { kcal: 0, protein: 0, carbs: 0, fat: 0, fiber: 0 },
   );
 
+/** Mirrors the shape returned by /api/estimate/quota. */
+type Quota = {
+  used: number;
+  limit: number | null;
+  remaining: number | null;
+  unlimited: boolean;
+};
+
 export function PhotoEstimate({ onConfirm }: Props) {
   const inputRef = useRef<HTMLInputElement>(null);
   const [photo, setPhoto] = useState<string | null>(null);
@@ -52,6 +60,7 @@ export function PhotoEstimate({ onConfirm }: Props) {
   const [name, setName] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [quota, setQuota] = useState<Quota | null>(null);
 
   function reset() {
     setPhoto(null);
@@ -61,6 +70,15 @@ export function PhotoEstimate({ onConfirm }: Props) {
     setError(null);
     if (inputRef.current) inputRef.current.value = '';
   }
+
+  // Fetched up front so the allowance is visible before a photo is taken,
+  // rather than only as an error after one has been framed and shot.
+  useEffect(() => {
+    fetch('/api/estimate/quota')
+      .then((r) => (r.ok ? r.json() : null))
+      .then((q: Quota | null) => q && setQuota(q))
+      .catch(() => {});
+  }, []);
 
   async function handleFile(file: File) {
     setBusy(true);
@@ -77,6 +95,9 @@ export function PhotoEstimate({ onConfirm }: Props) {
         body: JSON.stringify({ image: dataUrl }),
       });
       const json = await res.json();
+      // The server returns the updated allowance on refusals and failures too,
+      // so the counter stays right whichever way the call went.
+      if (json.quota) setQuota(json.quota as Quota);
       if (!res.ok) throw new Error(json.error ?? 'Estimate failed');
 
       const est = json as Estimate;
@@ -113,6 +134,8 @@ export function PhotoEstimate({ onConfirm }: Props) {
   }
 
   const totals = sum(items);
+  /** Out of allowance. Admins are never capped, so `remaining` is null for them. */
+  const spent = quota !== null && !quota.unlimited && (quota.remaining ?? 1) <= 0;
 
   return (
     <div className="space-y-3">
@@ -129,14 +152,35 @@ export function PhotoEstimate({ onConfirm }: Props) {
       />
 
       {!estimate && (
-        <button
-          type="button"
-          className="btn-quiet w-full"
-          disabled={busy}
-          onClick={() => inputRef.current?.click()}
-        >
-          {busy ? 'Identifying…' : '📷 Estimate from a photo'}
-        </button>
+        <>
+          <button
+            type="button"
+            className="btn-quiet w-full"
+            disabled={busy || spent}
+            onClick={() => inputRef.current?.click()}
+          >
+            {busy
+              ? 'Identifying…'
+              : spent
+                ? 'No photo estimates left today'
+                : '📷 Estimate from a photo'}
+          </button>
+
+          {quota && !quota.unlimited && quota.limit !== null && (
+            <p className="px-1 text-xs text-muted">
+              {spent ? (
+                <>
+                  You’ve used all {quota.limit} photo estimates for today — they reset at
+                  midnight. Log this meal from a preset or the food list instead.
+                </>
+              ) : (
+                <>
+                  {quota.remaining} of {quota.limit} photo estimates left today.
+                </>
+              )}
+            </p>
+          )}
+        </>
       )}
 
       {error && (

@@ -1,5 +1,18 @@
 import type { Metadata, Viewport } from 'next';
+import { Anton } from 'next/font/google';
 import './globals.css';
+
+/**
+ * Self-hosted at build time by next/font, so there is no request to Google on
+ * load and no flash of fallback text. `display: swap` keeps the wordmark
+ * readable in the fallback face while the real one arrives.
+ */
+const display = Anton({
+  subsets: ['latin'],
+  weight: '400',
+  display: 'swap',
+  variable: '--font-display',
+});
 import { TabBar } from '@/components/TabBar';
 import { ServiceWorker } from '@/components/ServiceWorker';
 import { SyncBanner } from '@/components/SyncBanner';
@@ -10,11 +23,11 @@ import { Splash } from '@/components/Splash';
 export const metadata: Metadata = {
   // The template gives every page its own tab title ("Report · Gains Log")
   // instead of five identical ones, which matters once tabs are open on a laptop.
-  title: { default: 'Gains Log', template: '%s · Gains Log' },
+  title: { default: 'GAINS LOG', template: '%s · GAINS LOG' },
   description: 'Daily tracker for a muscle-gain journey — habits, training, food and records.',
-  applicationName: 'Gains Log',
+  applicationName: 'GAINS LOG',
   manifest: '/manifest.webmanifest',
-  appleWebApp: { capable: true, title: 'Gains Log', statusBarStyle: 'default' },
+  appleWebApp: { capable: true, title: 'GAINS LOG', statusBarStyle: 'default' },
   icons: {
     icon: [
       { url: '/icon.svg', type: 'image/svg+xml' },
@@ -44,7 +57,7 @@ export default async function RootLayout({ children }: { children: React.ReactNo
   const signedIn = Boolean((await auth())?.user);
 
   return (
-    <html lang="en">
+    <html lang="en" className={display.variable}>
       <body className="min-h-dvh antialiased">
         <Splash />
         <ServiceWorker />

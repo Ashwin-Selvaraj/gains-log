@@ -1,4 +1,5 @@
 import Link from 'next/link';
+import { Wordmark } from '@/components/Wordmark';
 import { AccountMenu } from '@/components/AccountMenu';
 
 /**
@@ -9,7 +10,7 @@ import { AccountMenu } from '@/components/AccountMenu';
 export function AppHeader() {
   return (
     <header className="mx-auto flex w-full max-w-2xl items-center justify-between px-4 pt-5">
-      <Link href="/" className="inline-flex items-center gap-2" aria-label="Gains Log — Today">
+      <Link href="/" className="inline-flex items-center gap-2" aria-label="GAINS LOG — Today">
         <svg
           viewBox="0 0 512 512"
           className="h-6 w-6 shrink-0"
@@ -23,7 +24,7 @@ export function AppHeader() {
             <line x1="316" y1="120" x2="392" y2="196" strokeWidth="40" />
           </g>
         </svg>
-        <span className="text-sm font-semibold tracking-tight text-muted">Gains Log</span>
+        <Wordmark className="text-base text-muted" tracking="0.11em" />
       </Link>
       <AccountMenu />
     </header>
