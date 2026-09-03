@@ -109,6 +109,12 @@ model MealEntry {
   /// "manual" | "preset" | "photo-estimate" — kept as text so the schema works
   /// on SQLite as well as Postgres.
   source   String     @default("manual")
+  /// Which meal of the day: "breakfast" | "lunch" | "snack" | "dinner".
+  /// Text rather than an enum so the schema still works on SQLite, matching
+  /// the reasoning for `source` above. Existing rows default to "snack",
+  /// which is the honest answer for a meal logged before slots existed —
+  /// it says "some food, at some point" rather than inventing a breakfast.
+  slot     String     @default("snack")
   photoUrl String?
   entryId  String
   entry    DailyEntry @relation(fields: [entryId], references: [id], onDelete: Cascade)
@@ -426,6 +432,7 @@ model User {
   subscriptions PushSubscription[]
   notifications NotificationLog[]
   aiUsage       AiUsage[]
+  reminders     Reminder[]
 }
 
 model Account {
@@ -465,6 +472,33 @@ model VerificationToken {
   expires    DateTime
 
   @@unique([identifier, token])
+}
+
+/// A scheduled nudge. One row per time, several per person.
+///
+/// There used to be a single "evening reminder" on Settings, which assumed the
+/// only thing worth being reminded of was finishing the day. In practice the
+/// useful reminders are different in kind — weigh in at 8am, drink water at
+/// 3pm, log dinner at 9pm — so each carries its own label and the notification
+/// says that rather than a generic summary.
+model Reminder {
+  id     String @id @default(cuid())
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  /// "HH:MM", 24-hour, in the user's timezone (Settings.timezone).
+  time    String
+  /// What this one is for. Empty means "tell me what's still unlogged", which
+  /// is what the old single reminder did.
+  label   String  @default("")
+  enabled Boolean @default(true)
+
+  createdAt DateTime @default(now())
+
+  /// One reminder per time: two nudges in the same minute is never intended,
+  /// and it also makes the notification log's per-kind key unambiguous.
+  @@unique([userId, time])
+  @@index([userId])
 }
 
 /// One row per person per day, counting AI photo estimates.

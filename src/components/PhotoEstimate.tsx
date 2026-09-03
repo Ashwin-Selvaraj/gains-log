@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
+import { downscaleToDataUrl } from '@/lib/image';
 import type { EstimatedItem, Macros, PhotoEstimate as Estimate } from '@/lib/types';
 
 type Props = {
@@ -14,23 +15,11 @@ type Props = {
 /**
  * Downscale before upload. A modern phone camera shot is 3–8 MB, which is slow
  * on mobile data and gives the model nothing a 1024px image doesn't.
+ *
+ * Decoding lives in src/lib/image.ts, which falls back to an <img> element for
+ * formats createImageBitmap refuses — HEIC, i.e. most iPhone photos.
  */
-async function downscale(file: File, maxEdge = 1024): Promise<string> {
-  const bitmap = await createImageBitmap(file);
-  const scale = Math.min(1, maxEdge / Math.max(bitmap.width, bitmap.height));
-  const w = Math.round(bitmap.width * scale);
-  const h = Math.round(bitmap.height * scale);
-
-  const canvas = document.createElement('canvas');
-  canvas.width = w;
-  canvas.height = h;
-  const ctx = canvas.getContext('2d');
-  if (!ctx) throw new Error('Canvas unavailable');
-  ctx.drawImage(bitmap, 0, 0, w, h);
-  bitmap.close();
-
-  return canvas.toDataURL('image/jpeg', 0.82);
-}
+const downscale = (file: File, maxEdge = 1024) => downscaleToDataUrl(file, maxEdge, 0.82);
 
 const sum = (items: EstimatedItem[]): Macros =>
   items.reduce<Macros>(

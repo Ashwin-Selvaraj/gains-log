@@ -14,6 +14,8 @@ export type Meeting = {
 
 export type Meal = {
   id: string;
+  /** Which meal of the day — see MEAL_SLOTS in src/lib/goals.ts. */
+  slot?: string;
   name: string;
   calories: number | null;
   protein: number | null;

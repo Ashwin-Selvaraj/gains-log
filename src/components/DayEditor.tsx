@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
-import { MEASURES } from '@/lib/goals';
+import { MEAL_SLOTS, MEASURES, slotForHour } from '@/lib/goals';
 import { MeasureSlider } from '@/components/MeasureSlider';
 import { Section } from '@/components/Section';
 import { mutate, OfflineQueuedError } from '@/lib/sync';
@@ -171,7 +171,18 @@ export function DayEditor({
    */
   const addMeal = useCallback(
     async (payload: Record<string, unknown>, optimisticMeal: Omit<Meal, 'id'>) => {
-      const optimistic: Meal = { ...optimisticMeal, id: `tmp-${crypto.randomUUID()}` };
+      // Every route in — a preset tap, a food search, a typed meal, a photo
+      // estimate — funnels through here, so the slot is decided once. Worked
+      // out from the phone's clock, not the server's: the server is in
+      // Singapore and would think 7am in India is the middle of the night.
+      const slot = (payload.slot as string) ?? slotForHour(new Date().getHours());
+      payload = { ...payload, slot };
+
+      const optimistic: Meal = {
+        ...optimisticMeal,
+        slot,
+        id: `tmp-${crypto.randomUUID()}`,
+      };
       setEntry((prev) => ({ ...prev, meals: [...prev.meals, optimistic] }));
       try {
         const saved = await mutate<Meal>(`/api/entries/${date}/meals`, 'POST', payload);
@@ -248,6 +259,19 @@ export function DayEditor({
       } catch (err) {
         report(err);
       }
+    },
+    [report],
+  );
+
+  /** Corrects which meal of the day something was logged against. */
+  const moveMealSlot = useCallback(
+    async (id: string, slot: string) => {
+      setEntry((prev) => ({
+        ...prev,
+        meals: prev.meals.map((m) => (m.id === id ? { ...m, slot } : m)),
+      }));
+      if (id.startsWith('tmp-')) return;
+      await mutate(`/api/meals/${id}`, 'PATCH', { slot }).catch(report);
     },
     [report],
   );
@@ -421,6 +445,7 @@ export function DayEditor({
           totals={totals}
           onAdd={addMeal}
           onRemove={removeMeal}
+          onMoveSlot={moveMealSlot}
           bare
         />
       </Section>
@@ -730,6 +755,7 @@ function MealsSection({
   totals,
   onAdd,
   onRemove,
+  onMoveSlot,
   bare = false,
 }: {
   meals: Meal[];
@@ -737,10 +763,14 @@ function MealsSection({
   totals: Macros;
   onAdd: (payload: Record<string, unknown>, optimistic: Omit<Meal, 'id'>) => void;
   onRemove: (id: string) => void;
+  onMoveSlot: (id: string, slot: string) => void;
   /** Nested inside a <Section>, which already draws the card and the heading. */
   bare?: boolean;
 }) {
   const [mode, setMode] = useState<'none' | 'search' | 'manual'>('none');
+  // Seeded from the phone's clock, then remembered for the session so logging
+  // three things after dinner doesn't mean picking "dinner" three times.
+  const [addSlot, setAddSlot] = useState<string>(() => slotForHour(new Date().getHours()));
   const [name, setName] = useState('');
   const [calories, setCalories] = useState('');
   const [protein, setProtein] = useState('');
@@ -754,7 +784,7 @@ function MealsSection({
       protein: protein === '' ? null : Number(protein),
       source: 'manual',
     };
-    onAdd(payload, {
+    onAdd({ ...payload, slot: addSlot }, {
       name: payload.name,
       calories: payload.calories,
       protein: payload.protein,
@@ -778,44 +808,91 @@ function MealsSection({
         </div>
       )}
 
+      {/* Grouped by meal of the day rather than one flat list, so the log says
+          *when* as well as *what* — which is what makes "am I front-loading my
+          protein or eating it all at dinner?" answerable at a glance. Empty
+          slots are omitted; four permanent empty headings would be noise. */}
       {meals.length > 0 && (
         <>
-          <ul className="divide-y divide-line">
-            {meals.map((m) => (
-              <li key={m.id} className="flex items-center gap-3 py-2">
-                {m.photoUrl ? (
-                  /* eslint-disable-next-line @next/next/no-img-element */
-                  <img
-                    src={m.photoUrl}
-                    alt=""
-                    className="h-10 w-10 shrink-0 rounded-lg object-cover"
-                  />
-                ) : (
-                  <span aria-hidden className="w-10 shrink-0 text-center text-lg">
-                    {m.source === 'preset' ? '⭐' : m.source === 'food' ? '🥘' : '🍽️'}
-                  </span>
-                )}
-                <div className="min-w-0 flex-1">
-                  <p className="truncate text-sm font-medium">{m.name}</p>
-                  <p className="text-xs tabular-nums text-muted">
-                    {m.calories ?? '—'} kcal · P {m.protein ?? '—'}
-                    {m.carbs != null && ` · C ${m.carbs}`}
-                    {m.fat != null && ` · F ${m.fat}`}
-                    {m.fiber != null && m.fiber > 0 && ` · Fib ${m.fiber}`}
-                  </p>
+          <div className="space-y-3">
+            {MEAL_SLOTS.map((slotDef) => {
+              const inSlot = meals.filter((m) => (m.slot ?? 'snack') === slotDef.key);
+              if (inSlot.length === 0) return null;
+
+              const slotKcal = inSlot.reduce((sum, m) => sum + (m.calories ?? 0), 0);
+              const slotProtein =
+                Math.round(inSlot.reduce((sum, m) => sum + (m.protein ?? 0), 0) * 10) / 10;
+
+              return (
+                <div key={slotDef.key}>
+                  <div className="flex items-baseline justify-between gap-2 border-b border-line pb-1">
+                    <p className="text-xs font-semibold uppercase tracking-wider text-muted">
+                      <span aria-hidden className="mr-1">
+                        {slotDef.icon}
+                      </span>
+                      {slotDef.label}
+                    </p>
+                    <p className="shrink-0 text-xs tabular-nums text-muted">
+                      {slotKcal} kcal · {slotProtein}g P
+                    </p>
+                  </div>
+
+                  <ul className="divide-y divide-line">
+                    {inSlot.map((m) => (
+                      <li key={m.id} className="flex items-center gap-3 py-2">
+                        {m.photoUrl ? (
+                          /* eslint-disable-next-line @next/next/no-img-element */
+                          <img
+                            src={m.photoUrl}
+                            alt=""
+                            className="h-10 w-10 shrink-0 rounded-lg object-cover"
+                          />
+                        ) : (
+                          <span aria-hidden className="w-10 shrink-0 text-center text-lg">
+                            {m.source === 'preset' ? '⭐' : m.source === 'food' ? '🥘' : '🍽️'}
+                          </span>
+                        )}
+                        <div className="min-w-0 flex-1">
+                          <p className="truncate text-sm font-medium">{m.name}</p>
+                          <p className="text-xs tabular-nums text-muted">
+                            {m.calories ?? '—'} kcal · P {m.protein ?? '—'}
+                            {m.carbs != null && ` · C ${m.carbs}`}
+                            {m.fat != null && ` · F ${m.fat}`}
+                            {m.fiber != null && m.fiber > 0 && ` · Fib ${m.fiber}`}
+                          </p>
+                        </div>
+
+                        {/* The slot is guessed from the clock, and a late lunch
+                            gets guessed as a snack — so it has to be movable. */}
+                        <select
+                          aria-label={`Meal slot for ${m.name}`}
+                          className="h-9 shrink-0 rounded-lg border border-line bg-surface px-1 text-xs text-muted"
+                          value={m.slot ?? 'snack'}
+                          onChange={(e) => onMoveSlot(m.id, e.target.value)}
+                        >
+                          {MEAL_SLOTS.map((o) => (
+                            <option key={o.key} value={o.key}>
+                              {o.icon}
+                            </option>
+                          ))}
+                        </select>
+
+                        <button
+                          type="button"
+                          onClick={() => onRemove(m.id)}
+                          aria-label={`Remove ${m.name}`}
+                          className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full
+                                     text-muted hover:bg-line"
+                        >
+                          ×
+                        </button>
+                      </li>
+                    ))}
+                  </ul>
                 </div>
-                <button
-                  type="button"
-                  onClick={() => onRemove(m.id)}
-                  aria-label={`Remove ${m.name}`}
-                  className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full
-                             text-muted hover:bg-line"
-                >
-                  ×
-                </button>
-              </li>
-            ))}
-          </ul>
+              );
+            })}
+          </div>
 
           {/* The full macro split, once there is anything to split. */}
           <p className="text-xs tabular-nums text-muted">
@@ -823,6 +900,33 @@ function MealsSection({
           </p>
         </>
       )}
+
+      {/* Which slot the next thing added lands in. Pre-selected from the
+          clock, so the common case — logging lunch at lunchtime — takes no
+          taps at all, and the rest is one. */}
+      <div>
+        <p className="label">Adding to</p>
+        <div className="grid grid-cols-4 gap-1.5">
+          {MEAL_SLOTS.map((o) => (
+            <button
+              key={o.key}
+              type="button"
+              aria-pressed={addSlot === o.key}
+              onClick={() => setAddSlot(o.key)}
+              className={`flex min-h-[52px] flex-col items-center justify-center gap-0.5 rounded-xl border text-[0.65rem] font-medium transition active:scale-95 ${
+                addSlot === o.key
+                  ? 'border-accent bg-accent/10 text-ink'
+                  : 'border-line bg-surface text-muted'
+              }`}
+            >
+              <span aria-hidden className="text-sm">
+                {o.icon}
+              </span>
+              {o.label}
+            </button>
+          ))}
+        </div>
+      </div>
 
       {presets.length > 0 && (
         <div>
@@ -834,7 +938,7 @@ function MealsSection({
                 type="button"
                 onClick={() =>
                   onAdd(
-                    { presetId: p.id },
+                    { presetId: p.id, slot: addSlot },
                     {
                       name: p.name,
                       calories: p.macros.kcal,
@@ -865,7 +969,7 @@ function MealsSection({
           onCancel={() => setMode('none')}
           onPick={({ foodId, grams, name: foodName, macros }) =>
             onAdd(
-              { foodId, grams },
+              { foodId, grams, slot: addSlot },
               {
                 name: foodName,
                 calories: macros.kcal,
@@ -899,6 +1003,7 @@ function MealsSection({
               fiber: macros.fiber,
               photoUrl,
               source: 'photo-estimate',
+              slot: addSlot,
             },
             {
               name: mealName,

@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { ensureEntryId } from '@/lib/entries';
 import { isDateKey } from '@/lib/date';
-import { MEAL_SOURCES, type MealSource } from '@/lib/goals';
+import { MEAL_SLOT_KEYS, MEAL_SOURCES, type MealSlot, type MealSource } from '@/lib/goals';
 import { macrosFor, sumMacros, type Macros } from '@/lib/nutrition';
 import { requireUser, unauthorized } from '@/lib/auth';
 
@@ -42,6 +42,13 @@ export async function POST(req: Request, { params }: Params) {
   let source: MealSource = MEAL_SOURCES.includes(body.source as MealSource)
     ? (body.source as MealSource)
     : 'manual';
+
+  // Falls back to "snack" rather than guessing from the server clock: the
+  // server runs in Singapore, so its idea of breakfast time is not the user's.
+  // The client sends the slot it worked out from the phone's own clock.
+  const slot: MealSlot = MEAL_SLOT_KEYS.includes(body.slot as MealSlot)
+    ? (body.slot as MealSlot)
+    : 'snack';
 
   // --- from a single food -------------------------------------------------
   if (typeof body.foodId === 'string' && body.foodId) {
@@ -124,6 +131,7 @@ export async function POST(req: Request, { params }: Params) {
       foodId,
       grams,
       source,
+      slot,
       photoUrl: typeof body.photoUrl === 'string' ? body.photoUrl : null,
       userId: user.id,
       entryId: await ensureEntryId(user.id, date),

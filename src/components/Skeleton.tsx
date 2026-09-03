@@ -31,17 +31,26 @@ export function PageSkeleton({
   );
 }
 
+/**
+ * Mirrors the section layout the screen actually renders.
+ *
+ * It used to draw the old design — a 2x2 grid of habit stamps then three
+ * blocks — so every load flashed the previous layout before settling into the
+ * new one, which reads as the app changing its mind. A skeleton is a promise
+ * about what is coming; when it doesn't match, it is worse than no skeleton.
+ */
 export function TodaySkeleton() {
   return (
-    <div className="space-y-4" aria-hidden>
-      <div className="grid grid-cols-2 gap-3">
-        {[0, 1, 2, 3].map((i) => (
-          <SkeletonBlock key={i} className="h-[92px]" />
-        ))}
-      </div>
-      <SkeletonBlock className="h-24" />
+    <div className="space-y-3" aria-hidden>
+      {/* Training, Fuel, Body — open sections, tallest first. */}
+      <SkeletonBlock className="h-64" />
       <SkeletonBlock className="h-56" />
+      <SkeletonBlock className="h-72" />
+      {/* Learning */}
       <SkeletonBlock className="h-32" />
+      {/* Meetings and Photos, collapsed to a header row each. */}
+      <SkeletonBlock className="h-14" />
+      <SkeletonBlock className="h-14" />
     </div>
   );
 }

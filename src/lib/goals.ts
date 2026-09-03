@@ -47,3 +47,28 @@ export const MEASURES = {
 
 export const MEAL_SOURCES = ['manual', 'preset', 'photo-estimate', 'food'] as const;
 export type MealSource = (typeof MEAL_SOURCES)[number];
+
+/**
+ * The meals of a day, in the order they happen.
+ *
+ * Every meal used to land in one undifferentiated list, so a day's log said
+ * what you ate but not when — and "am I front-loading my protein or eating it
+ * all at dinner?" is one of the few genuinely useful questions a food log can
+ * answer. The default hours are how a new entry guesses its slot from the
+ * clock, so the common case needs no choice at all.
+ */
+export const MEAL_SLOTS = [
+  { key: 'breakfast', label: 'Breakfast', icon: '🌅', untilHour: 11 },
+  { key: 'lunch', label: 'Lunch', icon: '☀️', untilHour: 16 },
+  { key: 'snack', label: 'Snack', icon: '🍎', untilHour: 19 },
+  { key: 'dinner', label: 'Dinner', icon: '🌙', untilHour: 24 },
+] as const;
+
+export type MealSlot = (typeof MEAL_SLOTS)[number]['key'];
+
+export const MEAL_SLOT_KEYS = MEAL_SLOTS.map((s) => s.key) as readonly MealSlot[];
+
+/** The slot a meal logged right now most likely belongs to. */
+export function slotForHour(hour: number): MealSlot {
+  return (MEAL_SLOTS.find((s) => hour < s.untilHour) ?? MEAL_SLOTS[3]).key;
+}

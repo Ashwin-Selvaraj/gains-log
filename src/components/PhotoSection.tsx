@@ -1,6 +1,7 @@
 'use client';
 
 import { useRef, useState } from 'react';
+import { downscaleToBlob } from '@/lib/image';
 import type { Photo } from '@/lib/types';
 
 type Props = {
@@ -19,27 +20,11 @@ const QUALITY = 0.85;
  * Downscale and re-encode before upload. A raw phone photo is 3–8 MB; at
  * 1440px it's a few hundred KB with no visible difference on a phone screen,
  * which keeps both the upload and the R2 free tier comfortable.
+ *
+ * Decoding lives in src/lib/image.ts, which falls back to an <img> element for
+ * formats createImageBitmap refuses — HEIC, i.e. most iPhone photos.
  */
-async function prepare(file: File): Promise<{ blob: Blob; width: number; height: number }> {
-  const bitmap = await createImageBitmap(file);
-  const scale = Math.min(1, MAX_EDGE / Math.max(bitmap.width, bitmap.height));
-  const width = Math.round(bitmap.width * scale);
-  const height = Math.round(bitmap.height * scale);
-
-  const canvas = document.createElement('canvas');
-  canvas.width = width;
-  canvas.height = height;
-  const ctx = canvas.getContext('2d');
-  if (!ctx) throw new Error('Canvas unavailable');
-  ctx.drawImage(bitmap, 0, 0, width, height);
-  bitmap.close();
-
-  const blob = await new Promise<Blob | null>((resolve) =>
-    canvas.toBlob(resolve, 'image/jpeg', QUALITY),
-  );
-  if (!blob) throw new Error('Could not encode image');
-  return { blob, width, height };
-}
+const prepare = (file: File) => downscaleToBlob(file, MAX_EDGE, QUALITY);
 
 export function PhotoSection({ date, photos, onChange, bare = false }: Props) {
   const inputRef = useRef<HTMLInputElement>(null);

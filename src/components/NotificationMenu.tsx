@@ -14,7 +14,12 @@ export function NotificationMenu() {
   return (
     <Menu
       label="Notifications"
-      panelClassName="w-[19rem]"
+      // Wide enough for time fields and labels, so it spans the viewport
+      // rather than hanging off a button at the right edge.
+      variant="sheet"
+      // A panel to work in, not a list to pick from: touching a time field
+      // must not dismiss it.
+      closeOnSelect={false}
       trigger={
         <span className="flex h-8 w-8 items-center justify-center rounded-full text-muted ring-1 ring-line transition-colors hover:text-ink">
           <svg viewBox="0 0 24 24" className="h-4 w-4" fill="currentColor" aria-hidden>

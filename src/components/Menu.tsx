@@ -19,12 +19,28 @@ export function Menu({
   label,
   align = 'right',
   panelClassName = 'w-56',
+  variant = 'anchored',
+  closeOnSelect = true,
   children,
 }: {
   trigger: React.ReactNode;
   label: string;
   align?: 'left' | 'right';
   panelClassName?: string;
+  /**
+   * 'anchored' hangs the panel off the trigger, which is right for a short
+   * list of items. 'sheet' pins it across the viewport below the header:
+   * a panel wide enough to hold time fields does not fit beside a button
+   * sitting near the right edge of a phone, and anchoring pushed it off screen.
+   */
+  variant?: 'anchored' | 'sheet';
+  /**
+   * False for panels you *work inside* rather than pick from. A list of menu
+   * items should close the moment one is chosen; a panel with time fields and
+   * toggles must not vanish the instant you touch one — which is what happened
+   * to the notification settings, making the time impossible to change.
+   */
+  closeOnSelect?: boolean;
   children: React.ReactNode;
 }) {
   const [open, setOpen] = useState(false);
@@ -68,13 +84,17 @@ export function Menu({
       {open && (
         <div
           role="menu"
-          className={`absolute z-30 mt-2 overflow-hidden rounded-xl border border-line bg-card shadow-lg ${
-            align === 'right' ? 'right-0' : 'left-0'
-          } ${panelClassName}`}
-          // Any click inside dismisses it. A menu item's own job — navigating,
-          // submitting — still happens; React has already dispatched the event
-          // by the time this state change is applied.
-          onClick={() => setOpen(false)}
+          className={
+            variant === 'sheet'
+              ? 'fixed inset-x-3 top-[4.5rem] z-30 max-h-[calc(100dvh-6rem)] overflow-y-auto rounded-xl border border-line bg-card shadow-lg'
+              : `absolute z-30 mt-2 overflow-hidden rounded-xl border border-line bg-card shadow-lg ${
+                  align === 'right' ? 'right-0' : 'left-0'
+                } ${panelClassName}`
+          }
+          // A menu item's own job — navigating, submitting — still happens;
+          // React has already dispatched the event by the time this state
+          // change is applied. Panels opt out entirely (see closeOnSelect).
+          onClick={closeOnSelect ? () => setOpen(false) : undefined}
         >
           {children}
         </div>

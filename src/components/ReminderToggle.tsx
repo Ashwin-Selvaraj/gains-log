@@ -11,6 +11,8 @@ type PushInfo = {
 
 type Settings = { reminderEnabled: boolean; reminderTime: string; timezone: string };
 
+type Reminder = { id: string; time: string; label: string; enabled: boolean };
+
 /**
  * The push service wants the VAPID key as raw bytes, not base64url text.
  * Returns an ArrayBuffer rather than a Uint8Array: TypeScript's
@@ -47,6 +49,10 @@ export function ReminderToggle({ chrome = 'card' }: { chrome?: 'card' | 'plain' 
   const [busy, setBusy] = useState(false);
   const [status, setStatus] = useState<string | null>(null);
   const [supported, setSupported] = useState(true);
+  const [reminders, setReminders] = useState<Reminder[]>([]);
+  const [newTime, setNewTime] = useState('08:00');
+  const [newLabel, setNewLabel] = useState('');
+  const [adding, setAdding] = useState(false);
 
   useEffect(() => {
     if (
@@ -59,13 +65,15 @@ export function ReminderToggle({ chrome = 'card' }: { chrome?: 'card' | 'plain' 
     }
 
     void (async () => {
-      const [push, s] = await Promise.all([
+      const [push, s, list] = await Promise.all([
         fetch('/api/push').then((r) => r.json() as Promise<PushInfo>),
         fetch('/api/settings').then((r) => r.json() as Promise<Settings>),
-      ]).catch(() => [null, null] as const);
+        fetch('/api/reminders').then((r) => r.json() as Promise<Reminder[]>),
+      ]).catch(() => [null, null, []] as const);
 
       setInfo(push);
       setSettings(s);
+      setReminders(Array.isArray(list) ? list : []);
 
       const reg = await navigator.serviceWorker.getRegistration();
       const existing = await reg?.pushManager.getSubscription();
@@ -143,6 +151,53 @@ export function ReminderToggle({ chrome = 'card' }: { chrome?: 'card' | 'plain' 
     }
   }
 
+  async function addReminder() {
+    setAdding(true);
+    setStatus(null);
+    try {
+      const res = await fetch('/api/reminders', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ time: newTime, label: newLabel }),
+      });
+      const json = await res.json();
+      if (!res.ok) {
+        setStatus(json.error ?? 'Could not add that reminder.');
+        return;
+      }
+      setReminders((prev) => [...prev, json].sort((a, b) => a.time.localeCompare(b.time)));
+      setNewLabel('');
+    } finally {
+      setAdding(false);
+    }
+  }
+
+  async function patchReminder(id: string, patch: Partial<Reminder>) {
+    // Applied locally first: a time field that snaps back while the request is
+    // in flight feels broken, and the server only ever rejects a malformed
+    // time or a clash, both of which are reported below.
+    setReminders((prev) =>
+      prev
+        .map((r) => (r.id === id ? { ...r, ...patch } : r))
+        .sort((a, b) => a.time.localeCompare(b.time)),
+    );
+    const res = await fetch(`/api/reminders/${id}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(patch),
+    });
+    if (!res.ok) {
+      setStatus((await res.json()).error ?? 'Could not save that reminder.');
+      const list = await fetch('/api/reminders').then((r) => r.json());
+      setReminders(list);
+    }
+  }
+
+  async function removeReminder(id: string) {
+    setReminders((prev) => prev.filter((r) => r.id !== id));
+    await fetch(`/api/reminders/${id}`, { method: 'DELETE' }).catch(() => {});
+  }
+
   async function sendTest() {
     setBusy(true);
     setStatus(null);
@@ -185,25 +240,18 @@ export function ReminderToggle({ chrome = 'card' }: { chrome?: 'card' | 'plain' 
 
   return (
     <section className={`${shell} space-y-3`}>
+      {/* One master switch for the device, then the schedule. Subscribing is a
+          browser permission and belongs to this device; the reminders below
+          belong to the account and follow you to any device you allow. */}
       <div className="flex items-center gap-3">
         <div className="min-w-0 flex-1">
-          <p className="text-sm font-medium">Evening reminder</p>
+          <p className="text-sm font-medium">Push notifications</p>
           <p className="text-xs text-muted">
             {subscribed
-              ? 'Nudges this device if the day is still incomplete — even with the app closed.'
-              : 'Off — tap to get a nudge when the day is still unlogged.'}
+              ? 'On for this device — reminders arrive even with the app closed.'
+              : 'Off — turn on to get reminders on this device.'}
           </p>
         </div>
-
-        {subscribed && settings && (
-          <input
-            type="time"
-            className="field w-28 shrink-0 px-2 py-2 text-sm"
-            value={settings.reminderTime}
-            onChange={(e) => void saveSettings({ reminderTime: e.target.value })}
-            aria-label="Reminder time"
-          />
-        )}
 
         <button
           type="button"
@@ -211,7 +259,7 @@ export function ReminderToggle({ chrome = 'card' }: { chrome?: 'card' | 'plain' 
           disabled={busy || !info}
           role="switch"
           aria-checked={subscribed}
-          aria-label="Evening reminder"
+          aria-label="Push notifications"
           className={`relative h-8 w-14 shrink-0 rounded-full transition disabled:opacity-50 ${
             subscribed ? 'bg-accent' : 'bg-line'
           }`}
@@ -225,6 +273,99 @@ export function ReminderToggle({ chrome = 'card' }: { chrome?: 'card' | 'plain' 
       </div>
 
       {status && <p className="text-xs text-muted">{status}</p>}
+
+      <div className="border-t border-line pt-3">
+        <p className="mb-2 text-xs font-semibold uppercase tracking-wider text-muted">
+          Reminders
+        </p>
+
+        {reminders.length === 0 && (
+          <p className="mb-2 text-xs text-muted">
+            None yet. Add one below — a morning weigh-in, water at 3pm, logging dinner.
+          </p>
+        )}
+
+        <ul className="space-y-2">
+          {reminders.map((r) => (
+            <li key={r.id} className="flex items-center gap-2">
+              <input
+                type="time"
+                className="field w-[7.75rem] shrink-0 px-2 py-2 text-sm tabular-nums"
+                value={r.time}
+                aria-label="Reminder time"
+                onChange={(e) => void patchReminder(r.id, { time: e.target.value })}
+              />
+              <input
+                className="field min-w-0 flex-1 px-2 py-2 text-sm"
+                value={r.label}
+                placeholder="What for?"
+                aria-label="Reminder label"
+                onChange={(e) =>
+                  setReminders((prev) =>
+                    prev.map((x) => (x.id === r.id ? { ...x, label: e.target.value } : x)),
+                  )
+                }
+                // Saved on blur rather than per keystroke: a PATCH per letter
+                // would be a request storm for a field people type a sentence in.
+                onBlur={(e) => void patchReminder(r.id, { label: e.target.value })}
+              />
+              <button
+                type="button"
+                role="switch"
+                aria-checked={r.enabled}
+                aria-label={`Reminder at ${r.time} enabled`}
+                onClick={() => void patchReminder(r.id, { enabled: !r.enabled })}
+                className={`h-7 w-7 shrink-0 rounded-full border text-xs transition ${
+                  r.enabled
+                    ? 'border-accent bg-accent text-white'
+                    : 'border-line bg-surface text-muted'
+                }`}
+              >
+                <span aria-hidden>{r.enabled ? '✓' : ''}</span>
+              </button>
+              <button
+                type="button"
+                aria-label={`Remove reminder at ${r.time}`}
+                onClick={() => void removeReminder(r.id)}
+                className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-muted hover:bg-line"
+              >
+                ×
+              </button>
+            </li>
+          ))}
+        </ul>
+
+        <div className="mt-2 flex items-center gap-2">
+          <input
+            type="time"
+            className="field w-[7.75rem] shrink-0 px-2 py-2 text-sm tabular-nums"
+            value={newTime}
+            aria-label="New reminder time"
+            onChange={(e) => setNewTime(e.target.value)}
+          />
+          <input
+            className="field min-w-0 flex-1 px-2 py-2 text-sm"
+            value={newLabel}
+            placeholder="Morning weigh-in"
+            aria-label="New reminder label"
+            onChange={(e) => setNewLabel(e.target.value)}
+          />
+          <button
+            type="button"
+            onClick={() => void addReminder()}
+            disabled={adding || !newTime}
+            aria-label="Add reminder"
+            className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border border-line bg-surface text-lg text-ink transition active:scale-95 disabled:opacity-40"
+          >
+            +
+          </button>
+        </div>
+
+        <p className="mt-2 text-xs leading-relaxed text-muted">
+          A reminder with a label says that; one without says what you still
+          haven&apos;t logged, and stays quiet on a day that&apos;s already complete.
+        </p>
+      </div>
 
       {subscribed && (
         <button
