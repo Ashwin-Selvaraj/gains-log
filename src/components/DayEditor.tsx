@@ -2,8 +2,9 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
-import { MEASURES, STAMP_HABITS } from '@/lib/goals';
+import { MEASURES } from '@/lib/goals';
 import { MeasureSlider } from '@/components/MeasureSlider';
+import { Section } from '@/components/Section';
 import { mutate, OfflineQueuedError } from '@/lib/sync';
 import type {
   CarriedExercise,
@@ -19,7 +20,6 @@ import type {
   Settings,
   WorkoutSet,
 } from '@/lib/types';
-import { StampButton } from '@/components/StampButton';
 import { PhotoEstimate } from '@/components/PhotoEstimate';
 import { FoodPicker } from '@/components/FoodPicker';
 import { TargetsBar } from '@/components/TargetsBar';
@@ -341,8 +341,11 @@ export function DayEditor({
     [entry.meals],
   );
 
+  const meetingCount = entry.meetings.length;
+  const photoCount = entry.photos.length;
+
   return (
-    <div className="space-y-4">
+    <div className="space-y-3">
       {error && (
         <p
           role="alert"
@@ -352,42 +355,89 @@ export function DayEditor({
         </p>
       )}
 
-      {/* Only the two yes/no habits are stamps. Water and sleep are amounts,
-          and live in the Recovery card lower down. */}
-      <section aria-label="Habits" className="grid grid-cols-2 gap-3">
-        {STAMP_HABITS.map(({ key, label, icon }) => (
-          <StampButton
-            key={key}
-            label={label}
-            icon={icon}
-            checked={entry[key]}
-            onToggle={() => stage(key, !entry[key])}
+      {/* ── Training ───────────────────────────────────────────────────────
+          The Workout tick now sits in this section's header rather than in a
+          separate grid three cards above the sets it refers to. */}
+      <Section
+        title="Training"
+        icon="🏋️"
+        done={entry.workoutDone}
+        onToggleDone={() => stage('workoutDone', !entry.workoutDone)}
+        doneLabel="Mark today's workout done"
+        summary={
+          progress
+            ? `${progress.doneCount}/${progress.totalCount}`
+            : (plan?.name ?? undefined)
+        }
+      >
+        <WorkoutCard
+          plan={plan}
+          sets={entry.sets}
+          context={workoutContext}
+          progress={progress}
+          carried={carried}
+          date={date}
+          onCarried={() => onWorkoutChanged?.()}
+          onDropCarried={async (id) => {
+            await fetch(`/api/carried/${id}`, { method: 'DELETE' }).catch(() => {});
+            onWorkoutChanged?.();
+          }}
+          onLogSet={addSet}
+          onRemoveSet={removeSet}
+        />
+
+        <div>
+          <label className="label" htmlFor={`workout-${date}`}>
+            Session note
+          </label>
+          <input
+            id={`workout-${date}`}
+            className="field"
+            value={entry.workoutNote}
+            placeholder="Felt strong — bench moved well"
+            onChange={(e) => stage('workoutNote', e.target.value)}
           />
-        ))}
-      </section>
+        </div>
+      </Section>
 
-      <WorkoutCard
-        plan={plan}
-        sets={entry.sets}
-        context={workoutContext}
-        progress={progress}
-        carried={carried}
-        date={date}
-        onCarried={() => onWorkoutChanged?.()}
-        onDropCarried={async (id) => {
-          await fetch(`/api/carried/${id}`, { method: 'DELETE' }).catch(() => {});
-          onWorkoutChanged?.();
-        }}
-        onLogSet={addSet}
-        onRemoveSet={removeSet}
-      />
+      {/* ── Fuel ───────────────────────────────────────────────────────────
+          Targets and the meals that move them, in one place. They were two
+          separate cards, so the numbers and the thing that changes them were
+          never on screen together. */}
+      <Section
+        title="Fuel"
+        icon="🍽️"
+        summary={
+          <span className="tabular-nums">
+            {Math.round(totals.kcal)} kcal · {totals.protein}g P
+          </span>
+        }
+      >
+        {showTargets && settings && <TargetsBar totals={totals} settings={settings} />}
 
-      {showTargets && settings && (
-        <TargetsBar totals={totals} settings={settings} />
-      )}
+        <MealsSection
+          meals={entry.meals}
+          presets={presets}
+          totals={totals}
+          onAdd={addMeal}
+          onRemove={removeMeal}
+          bare
+        />
+      </Section>
 
-      <section className="card space-y-4">
-        <div className="grid grid-cols-3 gap-2">
+      {/* ── Body ───────────────────────────────────────────────────────────
+          Weight, water and sleep: the three numbers you measure rather than
+          tick. Weight used to share a card with two unrelated text notes. */}
+      <Section
+        title="Body"
+        icon="📊"
+        summary={
+          <span className="tabular-nums">
+            {entry.weightKg ? `${entry.weightKg} kg` : 'no weigh-in'}
+          </span>
+        }
+      >
+        <div className="grid grid-cols-2 gap-3">
           <NumberField
             label="Weight"
             unit="kg"
@@ -397,48 +447,22 @@ export function DayEditor({
           />
         </div>
 
-        <div>
-          <label className="label" htmlFor={`workout-${date}`}>
-            What I trained
-          </label>
-          <input
-            id={`workout-${date}`}
-            className="field"
-            value={entry.workoutNote}
-            placeholder="Push day — bench, OHP, dips"
-            onChange={(e) => stage('workoutNote', e.target.value)}
+        <div className="border-t border-line pt-4">
+          <MeasureSlider
+            {...MEASURES.water}
+            value={entry.waterLitres}
+            onChange={(litres) => {
+              stage('waterLitres', litres);
+              // The tick is derived, not separately toggled. Keeping a manual
+              // Water stamp alongside a litres figure let the two disagree —
+              // ticked but zero litres, or two litres and no tick — and the
+              // report counts the tick.
+              stage('waterDone', (litres ?? 0) > 0);
+            }}
           />
         </div>
 
-        <div>
-          <label className="label" htmlFor={`learning-${date}`}>
-            What I learned
-          </label>
-          <input
-            id={`learning-${date}`}
-            className="field"
-            value={entry.learningNote}
-            placeholder="Postgres index types"
-            onChange={(e) => stage('learningNote', e.target.value)}
-          />
-        </div>
-      </section>
-
-      <section className="card space-y-5" aria-label="Recovery and hydration">
-        <MeasureSlider
-          {...MEASURES.water}
-          value={entry.waterLitres}
-          onChange={(litres) => {
-            stage('waterLitres', litres);
-            // The tick is derived, not separately toggled. Keeping a manual
-            // Water stamp alongside a litres figure let the two disagree —
-            // ticked but zero litres, or two litres and no tick — and the
-            // report counts the tick.
-            stage('waterDone', (litres ?? 0) > 0);
-          }}
-        />
-
-        <div className="border-t border-line pt-5">
+        <div className="border-t border-line pt-4">
           <MeasureSlider
             {...MEASURES.sleep}
             value={entry.sleepHours}
@@ -461,29 +485,65 @@ export function DayEditor({
             Slept well
           </button>
         </div>
-      </section>
+      </Section>
 
-      <MeetingsSection
-        meetings={entry.meetings}
-        onAdd={addMeeting}
-        onRemove={removeMeeting}
-        onToggleCalendar={toggleMeetingCalendar}
-        calendarConnected={Boolean(settings?.calendarConnected)}
-      />
+      {/* ── Learning ───────────────────────────────────────────────────────
+          Its tick and its note were in different cards. */}
+      <Section
+        title="Learning"
+        icon="📘"
+        done={entry.learningDone}
+        onToggleDone={() => stage('learningDone', !entry.learningDone)}
+        doneLabel="Mark today's learning done"
+      >
+        <div>
+          <label className="label" htmlFor={`learning-${date}`}>
+            What I learned
+          </label>
+          <input
+            id={`learning-${date}`}
+            className="field"
+            value={entry.learningNote}
+            placeholder="Postgres index types"
+            onChange={(e) => stage('learningNote', e.target.value)}
+          />
+        </div>
+      </Section>
 
-      <MealsSection
-        meals={entry.meals}
-        presets={presets}
-        totals={totals}
-        onAdd={addMeal}
-        onRemove={removeMeal}
-      />
+      {/* ── Occasional ─────────────────────────────────────────────────────
+          Meetings and photos are not part of most days, so they start folded
+          with a count in the header — present when wanted, silent otherwise. */}
+      <Section
+        title="Meetings"
+        icon="🗓️"
+        collapsible
+        defaultOpen={meetingCount > 0}
+        summary={meetingCount > 0 ? `${meetingCount}` : 'none'}
+      >
+        <MeetingsSection
+          meetings={entry.meetings}
+          onAdd={addMeeting}
+          onRemove={removeMeeting}
+          onToggleCalendar={toggleMeetingCalendar}
+          calendarConnected={Boolean(settings?.calendarConnected)}
+          bare
+        />
+      </Section>
 
-      <PhotoSection
-        date={date}
-        photos={entry.photos}
-        onChange={(photos: Photo[]) => setEntry((prev) => ({ ...prev, photos }))}
-      />
+      <Section
+        title="Photos"
+        icon="📸"
+        collapsible
+        defaultOpen={photoCount > 0}
+        summary={photoCount > 0 ? `${photoCount}` : 'none'}
+      >
+        <PhotoSection
+          date={date}
+          photos={entry.photos}
+          onChange={(photos: Photo[]) => setEntry((prev) => ({ ...prev, photos }))}
+          bare
+        />
+      </Section>
 
       <PRCelebration achievement={achievement} onDismiss={() => setAchievement(null)} />
 
@@ -539,12 +599,15 @@ function MeetingsSection({
   onRemove,
   onToggleCalendar,
   calendarConnected,
+  bare = false,
 }: {
   meetings: Meeting[];
   onAdd: (time: string, title: string, addToCalendar: boolean) => void;
   onRemove: (id: string) => void;
   onToggleCalendar: (id: string, addToCalendar: boolean) => void;
   calendarConnected: boolean;
+  /** Nested inside a <Section>, which already draws the card and the heading. */
+  bare?: boolean;
 }) {
   const [time, setTime] = useState('');
   const [title, setTitle] = useState('');
@@ -562,8 +625,8 @@ function MeetingsSection({
   }
 
   return (
-    <section className="card space-y-3">
-      <h2 className="text-base font-semibold">Meetings</h2>
+    <section className={bare ? 'space-y-3' : 'card space-y-3'}>
+      {!bare && <h2 className="text-base font-semibold">Meetings</h2>}
 
       {meetings.length > 0 && (
         <ul className="flex flex-wrap gap-2">
@@ -667,12 +730,15 @@ function MealsSection({
   totals,
   onAdd,
   onRemove,
+  bare = false,
 }: {
   meals: Meal[];
   presets: Preset[];
   totals: Macros;
   onAdd: (payload: Record<string, unknown>, optimistic: Omit<Meal, 'id'>) => void;
   onRemove: (id: string) => void;
+  /** Nested inside a <Section>, which already draws the card and the heading. */
+  bare?: boolean;
 }) {
   const [mode, setMode] = useState<'none' | 'search' | 'manual'>('none');
   const [name, setName] = useState('');
@@ -702,13 +768,15 @@ function MealsSection({
   }
 
   return (
-    <section className="card space-y-3">
-      <div className="flex items-baseline justify-between gap-2">
-        <h2 className="text-base font-semibold">Meals</h2>
-        <p className="shrink-0 text-sm tabular-nums text-muted">
-          {totals.kcal} kcal · {totals.protein}g protein
-        </p>
-      </div>
+    <section className={bare ? 'space-y-3' : 'card space-y-3'}>
+      {!bare && (
+        <div className="flex items-baseline justify-between gap-2">
+          <h2 className="text-base font-semibold">Meals</h2>
+          <p className="shrink-0 text-sm tabular-nums text-muted">
+            {totals.kcal} kcal · {totals.protein}g protein
+          </p>
+        </div>
+      )}
 
       {meals.length > 0 && (
         <>

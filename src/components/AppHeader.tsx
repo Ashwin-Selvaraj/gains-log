@@ -1,5 +1,6 @@
 import Link from 'next/link';
 import { Wordmark } from '@/components/Wordmark';
+import { NotificationMenu } from '@/components/NotificationMenu';
 import { AccountMenu } from '@/components/AccountMenu';
 
 /**
@@ -26,7 +27,10 @@ export function AppHeader() {
         </svg>
         <Wordmark className="text-base text-muted" tracking="0.11em" />
       </Link>
-      <AccountMenu />
+      <div className="flex items-center gap-2">
+        <NotificationMenu />
+        <AccountMenu />
+      </div>
     </header>
   );
 }

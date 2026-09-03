@@ -3,28 +3,104 @@ import { prisma } from '@/lib/prisma';
 import { withJoins } from '@/lib/db-strategy';
 import { exerciseKey } from '@/lib/prs';
 import { requireUser, unauthorized } from '@/lib/auth';
+import { addDays, isDateKey, todayKey, type DateKey } from '@/lib/date';
 
 export const dynamic = 'force-dynamic';
 
 const WEEKDAYS = [0, 1, 2, 3, 4, 5, 6];
 
-/** Returns all seven weekdays, filling in any the user hasn't set up yet. */
-export async function GET() {
+/**
+ * The date this weekday falls on in the current week.
+ *
+ * The plan is a weekly template with no dates of its own, so "have I done
+ * Wednesday's session?" only means something once Wednesday is pinned to an
+ * actual date. Weeks run Monday to Sunday, matching the order the Plan screen
+ * lays the days out in — weekday 0 is Sunday in JavaScript, which puts it at
+ * the end of the week rather than the start.
+ */
+function dateOfWeekdayThisWeek(today: DateKey, weekday: number): DateKey {
+  const todayWeekday = new Date(`${today}T00:00:00`).getDay();
+  const fromMonday = (todayWeekday + 6) % 7;
+  const monday = addDays(today, -fromMonday);
+  return addDays(monday, (weekday + 6) % 7);
+}
+
+/**
+ * All seven weekdays, filling in any the user hasn't set up — each annotated
+ * with what was actually logged against it this week.
+ */
+export async function GET(req: Request) {
   const user = await requireUser();
   if (!user) return unauthorized();
-  const days = await prisma.planDay.findMany({
-    where: { userId: user.id },
-    include: { exercises: { orderBy: { position: 'asc' } } },
-    orderBy: { weekday: 'asc' },
-    ...withJoins,
-  });
+
+  // The client passes its own date so the week is the user's week, not the
+  // server's — the same reason every other dated endpoint does.
+  const param = new URL(req.url).searchParams.get('today');
+  const today = param && isDateKey(param) ? param : todayKey();
+
+  const dates = new Map(WEEKDAYS.map((w) => [w, dateOfWeekdayThisWeek(today, w)]));
+  const weekDates = [...dates.values()].sort();
+
+  const [days, sets] = await Promise.all([
+    prisma.planDay.findMany({
+      where: { userId: user.id },
+      include: { exercises: { orderBy: { position: 'asc' } } },
+      orderBy: { weekday: 'asc' },
+      ...withJoins,
+    }),
+    prisma.workoutSet.findMany({
+      where: {
+        userId: user.id,
+        entry: { date: { gte: weekDates[0], lte: weekDates[weekDates.length - 1] } },
+      },
+      select: { exerciseKey: true, entry: { select: { date: true } } },
+      ...withJoins,
+    }),
+  ]);
+
+  // "date|exerciseKey" -> how many sets were logged.
+  const logged = new Map<string, number>();
+  for (const set of sets) {
+    const k = `${set.entry.date}|${set.exerciseKey}`;
+    logged.set(k, (logged.get(k) ?? 0) + 1);
+  }
 
   const byWeekday = new Map(days.map((d) => [d.weekday, d]));
+
   return NextResponse.json(
-    WEEKDAYS.map(
-      (weekday) =>
-        byWeekday.get(weekday) ?? { id: '', weekday, name: 'Rest', exercises: [] },
-    ),
+    WEEKDAYS.map((weekday) => {
+      const day = byWeekday.get(weekday) ?? {
+        id: '',
+        weekday,
+        name: 'Rest',
+        exercises: [] as { name: string; exerciseKey: string; sets: number; reps: string }[],
+      };
+      const date = dates.get(weekday)!;
+
+      const exercises = day.exercises.map((e) => {
+        const doneSets = logged.get(`${date}|${e.exerciseKey}`) ?? 0;
+        return {
+          ...e,
+          doneSets,
+          // Any logged set counts as started; hitting the target count is
+          // "complete". Marking it done only at the full count would leave a
+          // 4x6 session that you did three sets of looking untouched.
+          done: doneSets > 0,
+          complete: doneSets >= e.sets,
+        };
+      });
+
+      return {
+        ...day,
+        exercises,
+        /** This week's date for this weekday, so the marks can be dated. */
+        date,
+        /** Nothing can have been logged for a day that hasn't happened. */
+        upcoming: date > today,
+        isToday: date === today,
+        doneCount: exercises.filter((e) => e.done).length,
+      };
+    }),
   );
 }
 

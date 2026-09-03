@@ -26,18 +26,29 @@ export function Wordmark({
 /**
  * The artwork behind the splash and the sign-in screen.
  *
- * A <picture> rather than one image scaled to fit: the two files are different
- * crops, not different sizes, and a phone should never download the 1536px
- * landscape one. The media query is the same breakpoint Tailwind calls `md`.
+ * A <picture> rather than one image scaled to fit: these are different crops,
+ * not different sizes, and a phone should never download the 1536px landscape
+ * file. The media query is the same breakpoint Tailwind calls `md`.
+ *
+ * Desktop uses one landscape image for both screens. On a phone they differ:
+ * the splash gets the three-panel triptych, which reads as a title card, and
+ * the login gets the single-figure portrait, which sits better behind a form
+ * than three competing subjects do.
  */
-export function BackgroundArt({ className = '' }: { className?: string }) {
+export function BackgroundArt({
+  mobileSrc,
+  className = '',
+}: {
+  mobileSrc: '/bg-mobile.webp' | '/splash-mobile.webp';
+  className?: string;
+}) {
   return (
     <picture>
       <source media="(min-width: 768px)" srcSet="/bg-desktop.webp" />
       {/* eslint-disable-next-line @next/next/no-img-element -- next/image cannot
           art-direct between two different crops, and these are fixed assets
           with no layout shift to guard against. */}
-      <img src="/bg-mobile.webp" alt="" aria-hidden className={className} />
+      <img src={mobileSrc} alt="" aria-hidden className={className} />
     </picture>
   );
 }

@@ -37,7 +37,10 @@ function urlBase64ToBuffer(base64: string): ArrayBuffer {
  * browser to a push service; the server sends in the evening whether or not
  * the app is running.
  */
-export function ReminderToggle() {
+export function ReminderToggle({ chrome = 'card' }: { chrome?: 'card' | 'plain' } = {}) {
+  // Rendered both as a standalone card and inside the header's notification
+  // menu, which supplies its own surface and border.
+  const shell = chrome === 'card' ? 'card' : 'p-3';
   const [info, setInfo] = useState<PushInfo | null>(null);
   const [settings, setSettings] = useState<Settings | null>(null);
   const [subscribed, setSubscribed] = useState(false);
@@ -158,7 +161,7 @@ export function ReminderToggle() {
 
   if (!supported) {
     return (
-      <section className="card">
+      <section className={shell}>
         <p className="text-sm font-medium">Evening reminder</p>
         <p className="text-xs text-muted">
           This browser doesn&apos;t support push notifications. On iPhone, add the app to
@@ -170,7 +173,7 @@ export function ReminderToggle() {
 
   if (info && !info.configured) {
     return (
-      <section className="card">
+      <section className={shell}>
         <p className="text-sm font-medium">Evening reminder</p>
         <p className="text-xs text-muted">
           Not set up on the server yet. Run <code>npm run push:keys</code> and add{' '}
@@ -181,7 +184,7 @@ export function ReminderToggle() {
   }
 
   return (
-    <section className="card space-y-3">
+    <section className={`${shell} space-y-3`}>
       <div className="flex items-center gap-3">
         <div className="min-w-0 flex-1">
           <p className="text-sm font-medium">Evening reminder</p>

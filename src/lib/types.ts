@@ -96,6 +96,13 @@ export type PlanExercise = {
   name: string;
   sets: number;
   reps: string;
+  exerciseKey?: string;
+  /** Sets logged against this week's instance of this weekday — see /api/plan. */
+  doneSets?: number;
+  /** At least one set logged. */
+  done?: boolean;
+  /** Hit the target set count. */
+  complete?: boolean;
 };
 
 export type CarriedExercise = {
@@ -126,6 +133,11 @@ export type PlanProgress = {
 };
 
 export type PlanDay = {
+  /** This week's date for this weekday, from /api/plan. */
+  date?: string;
+  upcoming?: boolean;
+  isToday?: boolean;
+  doneCount?: number;
   id: string;
   weekday: number;
   name: string;

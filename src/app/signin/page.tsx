@@ -35,7 +35,9 @@ export default async function SignInPage({
           FREEDOM lettering stays whole — centring it sliced the last letters
           off, which reads as a mistake rather than a crop. The lion loses part
           of its mane instead, which it can afford. */}
-      <BackgroundArt className="absolute inset-0 h-full w-full object-cover object-[80%_center] md:object-center" />
+      <BackgroundArt
+        mobileSrc="/bg-mobile.webp"
+        className="absolute inset-0 h-full w-full object-cover object-[80%_center] md:object-center" />
 
       {/* Keeps the subject visible up top and darkens towards the panel. */}
       <div className="absolute inset-0 bg-gradient-to-b from-black/30 via-black/45 to-black/90" />

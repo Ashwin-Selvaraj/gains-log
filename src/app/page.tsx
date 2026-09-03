@@ -2,7 +2,6 @@
 
 import { useCallback, useEffect, useState } from 'react';
 import { DayEditor } from '@/components/DayEditor';
-import { ReminderToggle } from '@/components/ReminderToggle';
 import { TodaySkeleton } from '@/components/Skeleton';
 import { todayKey } from '@/lib/date';
 import type {
@@ -103,22 +102,17 @@ export default function TodayPage() {
       {!entry && !failed && <TodaySkeleton />}
 
       {entry && date && (
-        <>
-          <DayEditor
-            date={date}
-            initialEntry={entry}
-            presets={presets}
-            plan={plan}
-            workoutContext={workoutContext}
-            carried={carried}
-            onWorkoutChanged={refreshWorkout}
-            settings={settings}
-            showTargets
-          />
-          <div className="mt-4">
-            <ReminderToggle />
-          </div>
-        </>
+        <DayEditor
+          date={date}
+          initialEntry={entry}
+          presets={presets}
+          plan={plan}
+          workoutContext={workoutContext}
+          carried={carried}
+          onWorkoutChanged={refreshWorkout}
+          settings={settings}
+          showTargets
+        />
       )}
     </>
   );

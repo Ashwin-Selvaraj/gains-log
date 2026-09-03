@@ -12,7 +12,10 @@ import { BackgroundArt, Wordmark } from '@/components/Wordmark';
 export function Splash() {
   return (
     <div aria-hidden className="splash fixed inset-0 z-[60] overflow-hidden bg-black">
-      <BackgroundArt className="absolute inset-0 h-full w-full scale-105 object-cover opacity-90" />
+      <BackgroundArt
+        mobileSrc="/splash-mobile.webp"
+        className="absolute inset-0 h-full w-full scale-105 object-cover opacity-90"
+      />
       {/* Light at the top where the artwork's subject is, heavy at the bottom
           where the wordmark sits. */}
       <div className="absolute inset-0 bg-gradient-to-b from-black/40 via-transparent to-black" />

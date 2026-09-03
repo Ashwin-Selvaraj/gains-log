@@ -7,6 +7,8 @@ type Props = {
   date: string;
   photos: Photo[];
   onChange: (photos: Photo[]) => void;
+  /** Nested inside a <Section>, which already draws the card and the heading. */
+  bare?: boolean;
 };
 
 /** Progress shots are worth keeping sharp — this is the one you compare months later. */
@@ -39,7 +41,7 @@ async function prepare(file: File): Promise<{ blob: Blob; width: number; height:
   return { blob, width, height };
 }
 
-export function PhotoSection({ date, photos, onChange }: Props) {
+export function PhotoSection({ date, photos, onChange, bare = false }: Props) {
   const inputRef = useRef<HTMLInputElement>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -80,15 +82,17 @@ export function PhotoSection({ date, photos, onChange }: Props) {
   }
 
   return (
-    <section className="card space-y-3">
-      <div className="flex items-baseline justify-between">
-        <h2 className="text-base font-semibold">Photos</h2>
-        {photos.length > 0 && (
-          <p className="text-sm text-muted">
-            {photos.length} {photos.length === 1 ? 'photo' : 'photos'}
-          </p>
-        )}
-      </div>
+    <section className={bare ? 'space-y-3' : 'card space-y-3'}>
+      {!bare && (
+        <div className="flex items-baseline justify-between">
+          <h2 className="text-base font-semibold">Photos</h2>
+          {photos.length > 0 && (
+            <p className="text-sm text-muted">
+              {photos.length} {photos.length === 1 ? 'photo' : 'photos'}
+            </p>
+          )}
+        </div>
+      )}
 
       <input
         ref={inputRef}

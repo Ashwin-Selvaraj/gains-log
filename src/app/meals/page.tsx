@@ -25,9 +25,10 @@ export default function MealsPage() {
   return (
     <>
       <header className="mb-4">
-        <h1 className="text-2xl font-bold tracking-tight">Meals</h1>
+        <h1 className="text-2xl font-bold tracking-tight">Foods</h1>
         <p className="text-sm text-muted">
-          Your regular combinations, and the food table they&apos;re built from.
+          Your saved combos and the food table they&apos;re built from. Log what you
+          actually ate on Today.
         </p>
       </header>
 

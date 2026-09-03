@@ -1,7 +1,7 @@
 import type { Metadata } from 'next';
 
 export const metadata: Metadata = {
-  title: 'Meals',
+  title: 'Foods',
   description: 'Your regular combinations and the food table.',
 };
 

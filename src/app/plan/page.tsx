@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react';
 import { WEEKDAY_NAMES } from '@/lib/goals';
 import { mutate } from '@/lib/sync';
 import { PageSkeleton, SkeletonBlock } from '@/components/Skeleton';
+import { todayKey } from '@/lib/date';
 import type { PlanDay } from '@/lib/types';
 
 type Draft = { name: string; exercises: { name: string; sets: string; reps: string }[] };
@@ -25,7 +26,7 @@ export default function PlanPage() {
   const [saving, setSaving] = useState(false);
 
   useEffect(() => {
-    fetch('/api/plan')
+    fetch(`/api/plan?today=${todayKey()}`)
       .then((r) => r.json() as Promise<PlanDay[]>)
       .then((d) => {
         setDays(d);
@@ -33,6 +34,9 @@ export default function PlanPage() {
       })
       .catch(() => setDays([]));
   }, []);
+
+  /** The saved plan for the selected day, which carries this week's marks. */
+  const savedDay = days?.[selected] ?? null;
 
   function select(weekday: number) {
     if (!days) return;
@@ -104,12 +108,26 @@ export default function PlanPage() {
                           }`}
             >
               <span>{WEEKDAY_NAMES[weekday].slice(0, 3)}</span>
-              <span
-                className={`mt-0.5 h-1.5 w-1.5 rounded-full ${
-                  rest ? 'bg-line' : 'bg-accent'
-                }`}
-                aria-hidden
-              />
+              {/* What actually happened this week, not just what was planned.
+                  A filled tick means every planned lift was logged that day. */}
+              {rest ? (
+                <span className="mt-0.5 h-1.5 w-1.5 rounded-full bg-line" aria-hidden />
+              ) : day.doneCount === day.exercises.length && day.exercises.length > 0 ? (
+                <span className="mt-0.5 text-[0.7rem] leading-none text-accent" aria-hidden>
+                  ✓
+                </span>
+              ) : (day.doneCount ?? 0) > 0 ? (
+                <span className="mt-0.5 text-[0.6rem] leading-none text-accent tabular-nums">
+                  {day.doneCount}/{day.exercises.length}
+                </span>
+              ) : (
+                <span
+                  className={`mt-0.5 h-1.5 w-1.5 rounded-full ${
+                    day.upcoming ? 'bg-line' : 'bg-accent/40'
+                  }`}
+                  aria-hidden
+                />
+              )}
             </button>
           );
         })}
@@ -129,10 +147,45 @@ export default function PlanPage() {
           />
         </div>
 
+        {/* What this weekday actually looked like in the current week. The plan
+            is a template with no dates, so completion only means something once
+            the weekday is pinned to a real date. */}
+        {savedDay && savedDay.exercises.length > 0 && (
+          <p className="text-xs text-muted">
+            {savedDay.upcoming
+              ? `Coming up ${savedDay.date}`
+              : `${savedDay.isToday ? 'Today' : savedDay.date} — ${savedDay.doneCount ?? 0} of ${savedDay.exercises.length} logged`}
+          </p>
+        )}
+
         {draft.exercises.length > 0 && (
           <ul className="space-y-2">
-            {draft.exercises.map((ex, i) => (
-              <li key={i} className="flex gap-2">
+            {draft.exercises.map((ex, i) => {
+              // Matched by position *and* name, so an edited row stops claiming
+              // the previous exercise's tick before it has been saved.
+              const saved = savedDay?.exercises[i];
+              const mark = saved && saved.name === ex.name ? saved : null;
+              return (
+              <li key={i} className="flex items-center gap-1.5">
+                <span
+                  aria-hidden
+                  title={
+                    mark?.complete
+                      ? 'All sets logged'
+                      : mark?.done
+                        ? `${mark.doneSets} of ${mark.sets} sets logged`
+                        : undefined
+                  }
+                  className={`w-3 shrink-0 text-center text-xs ${
+                    mark?.complete
+                      ? 'text-accent'
+                      : mark?.done
+                        ? 'text-accent/60'
+                        : 'text-transparent'
+                  }`}
+                >
+                  {mark?.complete ? '✓' : mark?.done ? '◐' : '·'}
+                </span>
                 <input
                   className="field"
                   value={ex.name}
@@ -141,14 +194,14 @@ export default function PlanPage() {
                   onChange={(e) => editExercise(i, { name: e.target.value })}
                 />
                 <input
-                  className="field w-16 shrink-0 px-2 text-center"
+                  className="field w-12 shrink-0 px-1 text-center"
                   inputMode="numeric"
                   value={ex.sets}
                   aria-label={`Sets for exercise ${i + 1}`}
                   onChange={(e) => editExercise(i, { sets: e.target.value })}
                 />
                 <input
-                  className="field w-20 shrink-0 px-2 text-center"
+                  className="field w-16 shrink-0 px-1 text-center"
                   value={ex.reps}
                   placeholder="8-12"
                   aria-label={`Reps for exercise ${i + 1}`}
@@ -168,7 +221,8 @@ export default function PlanPage() {
                   ×
                 </button>
               </li>
-            ))}
+              );
+            })}
           </ul>
         )}
 

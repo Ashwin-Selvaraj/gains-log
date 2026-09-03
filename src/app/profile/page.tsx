@@ -22,7 +22,9 @@ export default function ProfilePage() {
   const [data, setData] = useState<Profile | null>(null);
   const [error, setError] = useState('');
   const [height, setHeight] = useState('');
-  const [savingHeight, setSavingHeight] = useState(false);
+  const [weight, setWeight] = useState('');
+  const [saving, setSaving] = useState(false);
+  const [saved, setSaved] = useState(false);
 
   useEffect(() => {
     fetch(`/api/profile?today=${todayKey()}`)
@@ -30,26 +32,51 @@ export default function ProfilePage() {
       .then((p: Profile) => {
         setData(p);
         setHeight(p.body.heightCm ? String(p.body.heightCm) : '');
+        setWeight(p.body.currentKg ? String(p.body.currentKg) : '');
       })
       .catch(() => setError('Could not load your profile.'));
   }, []);
 
-  async function saveHeight() {
-    const cm = Number(height);
-    if (!Number.isFinite(cm) || cm < 80 || cm > 250) {
+  /**
+   * Height is a setting; weight is today's log entry. They are saved to
+   * different places on purpose — height changes once in a decade, weight is a
+   * daily measurement — but they are edited together here because "update my
+   * numbers" is one intention, and making someone hunt for the scale reading on
+   * the Today screen was the gap this fills.
+   */
+  async function saveBody() {
+    const cm = height.trim() === '' ? null : Number(height);
+    const kg = weight.trim() === '' ? null : Number(weight);
+
+    if (cm !== null && (!Number.isFinite(cm) || cm < 80 || cm > 250)) {
       setError('Height should be between 80 and 250 cm.');
       return;
     }
-    setSavingHeight(true);
+    if (kg !== null && (!Number.isFinite(kg) || kg < 20 || kg > 400)) {
+      setError('Weight should be between 20 and 400 kg.');
+      return;
+    }
+
+    setSaving(true);
     setError('');
+    setSaved(false);
     try {
-      await mutate('/api/settings', 'PATCH', { heightCm: cm });
-      const fresh = await fetch(`/api/profile?today=${todayKey()}`).then((r) => r.json());
+      const today = todayKey();
+      await Promise.all([
+        cm === null ? Promise.resolve() : mutate('/api/settings', 'PATCH', { heightCm: cm }),
+        // Written against today's entry, so it shows up in the weight trend and
+        // the report exactly as if it had been typed on the Today screen.
+        kg === null
+          ? Promise.resolve()
+          : mutate(`/api/entries/${today}`, 'PATCH', { weightKg: kg }),
+      ]);
+      const fresh = await fetch(`/api/profile?today=${today}`).then((r) => r.json());
       setData(fresh);
+      setSaved(true);
     } catch {
-      setError('Could not save your height.');
+      setError('Could not save. Check your connection and try again.');
     } finally {
-      setSavingHeight(false);
+      setSaving(false);
     }
   }
 
@@ -166,7 +193,18 @@ export default function ProfilePage() {
           <Stat
             value={body.currentKg ?? '—'}
             unit={body.currentKg ? 'kg' : undefined}
-            label={data.lastWeighedOn ? `Weighed ${data.lastWeighedOn}` : 'No weigh-in yet'}
+            label={
+              data.lastWeighedOn
+                ? data.lastWeighedOn === todayKey()
+                  ? 'Weighed today'
+                  : // Short form: the full ISO date overflowed a third of a
+                    // phone's width and truncated to "Weighed 2026…".
+                    `Weighed ${new Date(`${data.lastWeighedOn}T00:00:00`).toLocaleDateString(
+                      undefined,
+                      { day: 'numeric', month: 'short' },
+                    )}`
+                : 'No weigh-in yet'
+            }
           />
           <Stat
             value={
@@ -197,34 +235,63 @@ export default function ProfilePage() {
           </p>
         </div>
 
-        {/* BMI needs a height, and it is the one number the app cannot infer. */}
-        {body.heightCm == null ? (
-          <div className="border-t border-line pt-4">
-            <label className="label" htmlFor="height">
-              Your height, to work out BMI
-            </label>
-            <div className="flex gap-2">
+        {/* Always editable, not just when empty. Weight is a daily measurement
+            and this is where people look for it; height was previously only
+            askable once, with no way to correct a typo afterwards. */}
+        <div className="border-t border-line pt-4">
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="label" htmlFor="weight">
+                Weight <span className="font-normal">(kg)</span>
+              </label>
+              <input
+                id="weight"
+                className="field text-center"
+                type="number"
+                inputMode="decimal"
+                step="0.1"
+                placeholder="—"
+                value={weight}
+                onChange={(e) => {
+                  setWeight(e.target.value);
+                  setSaved(false);
+                }}
+              />
+            </div>
+            <div>
+              <label className="label" htmlFor="height">
+                Height <span className="font-normal">(cm)</span>
+              </label>
               <input
                 id="height"
-                className="field"
+                className="field text-center"
                 type="number"
                 inputMode="decimal"
                 step="0.5"
-                placeholder="175"
+                placeholder="—"
                 value={height}
-                onChange={(e) => setHeight(e.target.value)}
+                onChange={(e) => {
+                  setHeight(e.target.value);
+                  setSaved(false);
+                }}
               />
-              <button
-                className="btn-primary shrink-0"
-                onClick={saveHeight}
-                disabled={savingHeight || !height}
-              >
-                {savingHeight ? 'Saving…' : 'Save'}
-              </button>
             </div>
-            <p className="mt-1.5 text-xs text-muted">Centimetres.</p>
           </div>
-        ) : (
+
+          <button
+            className="btn-primary mt-3 w-full"
+            onClick={saveBody}
+            disabled={saving || (!height && !weight)}
+          >
+            {saving ? 'Saving…' : saved ? 'Saved ✓' : 'Save'}
+          </button>
+
+          <p className="mt-2 text-xs text-muted">
+            Weight is logged against today, so it appears in your trend and report.
+          </p>
+        </div>
+
+        {body.heightCm != null && (
           <div className="border-t border-line pt-4">
             <div className="flex items-baseline justify-between gap-3">
               <div>
