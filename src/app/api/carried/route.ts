@@ -2,17 +2,20 @@ import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { isDateKey } from '@/lib/date';
 import { exerciseKey } from '@/lib/prs';
+import { requireUser, unauthorized } from '@/lib/auth';
 
 export const dynamic = 'force-dynamic';
 
 export async function GET(req: Request) {
+  const user = await requireUser();
+  if (!user) return unauthorized();
   const date = new URL(req.url).searchParams.get('date');
   if (!date || !isDateKey(date)) {
     return NextResponse.json({ error: 'valid date required' }, { status: 400 });
   }
   return NextResponse.json(
     await prisma.carriedExercise.findMany({
-      where: { toDate: date },
+      where: { userId: user.id, toDate: date },
       orderBy: { createdAt: 'asc' },
     }),
   );
@@ -26,6 +29,8 @@ export async function GET(req: Request) {
  * you owe yourself from last Tuesday.
  */
 export async function POST(req: Request) {
+  const user = await requireUser();
+  if (!user) return unauthorized();
   const body = (await req.json()) as {
     fromDate?: string;
     toDate?: string;
@@ -60,14 +65,18 @@ export async function POST(req: Request) {
   // Skip anything already carried onto that day, so tapping twice doesn't
   // duplicate the whole session.
   const existing = await prisma.carriedExercise.findMany({
-    where: { toDate, exerciseKey: { in: items.map((i) => exerciseKey(i.name)) } },
+    where: {
+      userId: user.id,
+      toDate,
+      exerciseKey: { in: items.map((i) => exerciseKey(i.name)) },
+    },
     select: { exerciseKey: true },
   });
   const already = new Set(existing.map((e) => e.exerciseKey));
 
   const toCreate = items
     .filter((i) => !already.has(exerciseKey(i.name)))
-    .map((i) => ({ ...i, exerciseKey: exerciseKey(i.name), fromDate, toDate }));
+    .map((i) => ({ ...i, exerciseKey: exerciseKey(i.name), fromDate, toDate, userId: user.id }));
 
   if (toCreate.length) await prisma.carriedExercise.createMany({ data: toCreate });
 
@@ -78,13 +87,17 @@ export async function POST(req: Request) {
   // simply come round again with next week's template.
   await prisma.carriedExercise.deleteMany({
     where: {
+      userId: user.id,
       toDate: fromDate,
       exerciseKey: { in: items.map((i) => exerciseKey(i.name)) },
     },
   });
 
   return NextResponse.json(
-    await prisma.carriedExercise.findMany({ where: { toDate }, orderBy: { createdAt: 'asc' } }),
+    await prisma.carriedExercise.findMany({
+      where: { userId: user.id, toDate },
+      orderBy: { createdAt: 'asc' },
+    }),
     { status: 201 },
   );
 }

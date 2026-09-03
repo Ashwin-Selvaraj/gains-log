@@ -54,20 +54,25 @@ const EXTENSIONS: Record<string, string> = {
 };
 
 /**
- * Object key for a photo, e.g. `progress/2026/09/clx123abc.jpg`.
+ * Object key for a photo, e.g. `progress/<userId>/2026/09/clx123abc.jpg`.
  *
- * Foldered by kind then year/month so the bucket stays browsable in the
- * Cloudflare dashboard as it grows, and so a lifecycle rule could later expire
- * or archive old months without touching recent ones. The id is a cuid rather
+ * Foldered by kind, then owner, then year/month: the bucket stays browsable as
+ * it grows, a lifecycle rule can expire old months, and one person's photos can
+ * be listed or purged as a group when they leave. The id is a cuid rather
  * than the original filename: filenames from a phone camera collide constantly
  * (IMG_0001.jpg) and can carry characters that need escaping.
  */
-export function photoKey(kind: PhotoKind, id: string, contentType: string): string {
+export function photoKey(
+  kind: PhotoKind,
+  userId: string,
+  id: string,
+  contentType: string,
+): string {
   const now = new Date();
   const year = now.getFullYear();
   const month = String(now.getMonth() + 1).padStart(2, '0');
   const ext = EXTENSIONS[contentType] ?? 'jpg';
-  return `${kind}/${year}/${month}/${id}.${ext}`;
+  return `${kind}/${userId}/${year}/${month}/${id}.${ext}`;
 }
 
 export async function uploadPhoto(

@@ -1,14 +1,19 @@
 import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
-import { SETTINGS_BOUNDS, SINGLETON, getSettings } from '@/lib/settings';
+import { SETTINGS_BOUNDS, getSettings } from '@/lib/settings';
+import { requireUser, unauthorized } from '@/lib/auth';
 
 export const dynamic = 'force-dynamic';
 
 export async function GET() {
-  return NextResponse.json(await getSettings());
+  const user = await requireUser();
+  if (!user) return unauthorized();
+  return NextResponse.json(await getSettings(user.id));
 }
 
 export async function PATCH(req: Request) {
+  const user = await requireUser();
+  if (!user) return unauthorized();
   const body = (await req.json()) as Record<string, unknown>;
   const data: Record<string, unknown> = {};
 
@@ -59,8 +64,8 @@ export async function PATCH(req: Request) {
 
   return NextResponse.json(
     await prisma.settings.upsert({
-      where: { id: SINGLETON },
-      create: { id: SINGLETON, ...data },
+      where: { userId: user.id },
+      create: { userId: user.id, ...data },
       update: data,
     }),
   );

@@ -3,6 +3,7 @@ import { prisma } from '@/lib/prisma';
 import { loadSets, planKeysForWeekday } from '@/lib/workouts';
 import { computeRecords, lastSessionBefore } from '@/lib/prs';
 import { isDateKey, todayKey } from '@/lib/date';
+import { requireUser, unauthorized } from '@/lib/auth';
 
 export const dynamic = 'force-dynamic';
 
@@ -16,6 +17,8 @@ export const dynamic = 'force-dynamic';
  * for the same bytes.
  */
 export async function GET(req: Request) {
+  const user = await requireUser();
+  if (!user) return unauthorized();
   const param = new URL(req.url).searchParams.get('date');
   const date = param && isDateKey(param) ? param : todayKey();
 
@@ -25,11 +28,17 @@ export async function GET(req: Request) {
   // together — one round trip instead of two, and this endpoint is on the
   // critical path of every gym session.
   const [planned, todaySets, carried, planDay] = await Promise.all([
-    planKeysForWeekday(weekday),
+    planKeysForWeekday(user.id, weekday),
     // Sets logged today tell us about off-plan exercises we also need.
-    loadSets({ since: date }),
-    prisma.carriedExercise.findMany({ where: { toDate: date }, orderBy: { createdAt: 'asc' } }),
-    prisma.planDay.findUnique({ where: { weekday }, select: { name: true } }),
+    loadSets(user.id, { since: date }),
+    prisma.carriedExercise.findMany({
+      where: { userId: user.id, toDate: date },
+      orderBy: { createdAt: 'asc' },
+    }),
+    prisma.planDay.findUnique({
+      where: { userId_weekday: { userId: user.id, weekday } },
+      select: { name: true },
+    }),
   ]);
   const loggedToday = todaySets.filter((s) => s.date === date);
 
@@ -61,7 +70,7 @@ export async function GET(req: Request) {
     });
   }
 
-  const sets = await loadSets({ keys });
+  const sets = await loadSets(user.id, { keys });
 
   const exercises = keys.map((key) => {
     const forKey = sets.filter((s) => s.exerciseKey === key);

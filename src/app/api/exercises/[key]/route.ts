@@ -8,6 +8,7 @@ import {
   toSessions,
 } from '@/lib/prs';
 import { isDateKey, todayKey } from '@/lib/date';
+import { requireUser, unauthorized } from '@/lib/auth';
 
 export const dynamic = 'force-dynamic';
 
@@ -15,13 +16,15 @@ type Params = { params: Promise<{ key: string }> };
 
 /** The full detail report for one exercise. */
 export async function GET(req: Request, { params }: Params) {
+  const user = await requireUser();
+  if (!user) return unauthorized();
   const { key } = await params;
   const decoded = decodeURIComponent(key);
 
   const param = new URL(req.url).searchParams.get('today');
   const today = param && isDateKey(param) ? param : todayKey();
 
-  const sets = await loadSets({ keys: [decoded] });
+  const sets = await loadSets(user.id, { keys: [decoded] });
   const records = computeRecords(sets, today);
 
   if (!records) {

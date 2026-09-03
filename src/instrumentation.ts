@@ -21,7 +21,7 @@ export async function register() {
     return;
   }
 
-  const { runEveningReminder } = await import('@/lib/reminders');
+  const { runRemindersForAllUsers } = await import('@/lib/reminders');
 
   /**
    * Polls rather than firing on an exact cron tick.
@@ -34,12 +34,9 @@ export async function register() {
    */
   const tick = async () => {
     try {
-      const result = await runEveningReminder();
-      if (result.ran) {
-        console.log(
-          `[scheduler] evening reminder sent to ${result.sent} device(s)` +
-            (result.removed ? `, pruned ${result.removed} dead` : ''),
-        );
+      const { checked, sent } = await runRemindersForAllUsers();
+      if (sent > 0) {
+        console.log(`[scheduler] evening reminder sent for ${sent} of ${checked} user(s)`);
       }
     } catch (err) {
       // A failed tick must never take the server down with it.

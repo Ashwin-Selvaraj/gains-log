@@ -4,6 +4,7 @@ import { ensureEntryId } from '@/lib/entries';
 import { isDateKey } from '@/lib/date';
 import { MEAL_SOURCES, type MealSource } from '@/lib/goals';
 import { macrosFor, sumMacros, type Macros } from '@/lib/nutrition';
+import { requireUser, unauthorized } from '@/lib/auth';
 
 export const dynamic = 'force-dynamic';
 
@@ -27,6 +28,8 @@ function toNumOrNull(raw: unknown): number | null | undefined {
  * but never silently rewrites what you already ate.
  */
 export async function POST(req: Request, { params }: Params) {
+  const user = await requireUser();
+  if (!user) return unauthorized();
   const { date } = await params;
   if (!isDateKey(date)) return NextResponse.json({ error: 'Bad date' }, { status: 400 });
 
@@ -42,7 +45,10 @@ export async function POST(req: Request, { params }: Params) {
 
   // --- from a single food -------------------------------------------------
   if (typeof body.foodId === 'string' && body.foodId) {
-    const food = await prisma.food.findUnique({ where: { id: body.foodId } });
+    // Shared foods (userId null) plus the caller's own; never someone else's.
+    const food = await prisma.food.findFirst({
+      where: { id: body.foodId, OR: [{ userId: null }, { userId: user.id }] },
+    });
     if (!food) return NextResponse.json({ error: 'Unknown food' }, { status: 404 });
 
     const g = Number(body.grams);
@@ -59,8 +65,8 @@ export async function POST(req: Request, { params }: Params) {
 
   // --- from a preset ------------------------------------------------------
   else if (typeof body.presetId === 'string' && body.presetId) {
-    const preset = await prisma.mealPreset.findUnique({
-      where: { id: body.presetId },
+    const preset = await prisma.mealPreset.findFirst({
+      where: { id: body.presetId, userId: user.id },
       include: { items: { include: { food: true }, orderBy: { position: 'asc' } } },
     });
     if (!preset) return NextResponse.json({ error: 'Unknown preset' }, { status: 404 });
@@ -119,7 +125,8 @@ export async function POST(req: Request, { params }: Params) {
       grams,
       source,
       photoUrl: typeof body.photoUrl === 'string' ? body.photoUrl : null,
-      entryId: await ensureEntryId(date),
+      userId: user.id,
+      entryId: await ensureEntryId(user.id, date),
     },
   });
 

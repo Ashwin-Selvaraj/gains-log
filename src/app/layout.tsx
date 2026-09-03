@@ -4,6 +4,7 @@ import { TabBar } from '@/components/TabBar';
 import { ServiceWorker } from '@/components/ServiceWorker';
 import { SyncBanner } from '@/components/SyncBanner';
 import { AppHeader } from '@/components/AppHeader';
+import { auth } from '@/lib/auth';
 
 export const metadata: Metadata = {
   // The template gives every page its own tab title ("Report · Gains Log")
@@ -34,15 +35,25 @@ export const viewport: Viewport = {
   ],
 };
 
-export default function RootLayout({ children }: { children: React.ReactNode }) {
+export default async function RootLayout({ children }: { children: React.ReactNode }) {
+  // Signed out, the app chrome is hidden: the tab bar would offer five
+  // destinations that all bounce straight back to the sign-in screen, which
+  // reads as the app being broken rather than as it asking you to sign in, and
+  // the header wordmark would repeat the one on the sign-in card itself.
+  const signedIn = Boolean((await auth())?.user);
+
   return (
     <html lang="en">
       <body className="min-h-dvh antialiased">
         <ServiceWorker />
         <SyncBanner />
-        <AppHeader />
-        <main className="mx-auto w-full max-w-2xl px-4 pb-44 pt-2">{children}</main>
-        <TabBar />
+        {signedIn && <AppHeader />}
+        <main
+          className={`mx-auto w-full max-w-2xl px-4 pt-2 ${signedIn ? 'pb-44' : 'pb-12'}`}
+        >
+          {children}
+        </main>
+        {signedIn && <TabBar />}
       </body>
     </html>
   );

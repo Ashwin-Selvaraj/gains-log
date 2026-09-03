@@ -1,4 +1,5 @@
 import Link from 'next/link';
+import { AccountMenu } from '@/components/AccountMenu';
 
 /**
  * The wordmark, shown once at the top of every screen. Each page still has its
@@ -7,7 +8,7 @@ import Link from 'next/link';
  */
 export function AppHeader() {
   return (
-    <header className="mx-auto w-full max-w-2xl px-4 pt-5">
+    <header className="mx-auto flex w-full max-w-2xl items-center justify-between px-4 pt-5">
       <Link href="/" className="inline-flex items-center gap-2" aria-label="Gains Log — Today">
         <svg
           viewBox="0 0 512 512"
@@ -24,6 +25,7 @@ export function AppHeader() {
         </svg>
         <span className="text-sm font-semibold tracking-tight text-muted">Gains Log</span>
       </Link>
+      <AccountMenu />
     </header>
   );
 }

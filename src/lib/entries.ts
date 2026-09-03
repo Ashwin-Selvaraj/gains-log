@@ -15,8 +15,11 @@ export type FullEntry = NonNullable<Awaited<ReturnType<typeof peekEntry>>>;
  * Reads a day with its meetings and meals. Never creates a row — rows come into
  * existence via PATCH, or via connectOrCreate when a meal or meeting is added.
  */
-export async function peekEntry(date: DateKey) {
-  return prisma.dailyEntry.findUnique({ where: { date }, include, ...withJoins });
+export async function peekEntry(userId: string, date: DateKey) {
+  // findFirst rather than findUnique on the compound key: it reads the same and
+  // makes it impossible to accidentally drop the userId and match another
+  // person's day of the same date.
+  return prisma.dailyEntry.findFirst({ where: { userId, date }, include, ...withJoins });
 }
 
 /**
@@ -29,10 +32,10 @@ export async function peekEntry(date: DateKey) {
  * `connectOrCreate`, makes Prisma fall back to an interactive transaction —
  * BEGIN, SELECT, INSERT, COMMIT — which is four.
  */
-export async function ensureEntryId(date: DateKey): Promise<string> {
+export async function ensureEntryId(userId: string, date: DateKey): Promise<string> {
   const { id } = await prisma.dailyEntry.upsert({
-    where: { date },
-    create: { date },
+    where: { userId_date: { userId, date } },
+    create: { userId, date },
     update: { date },
     select: { id: true },
   });

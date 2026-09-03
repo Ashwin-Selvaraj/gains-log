@@ -2,15 +2,18 @@ import { NextResponse } from 'next/server';
 import { loadSets } from '@/lib/workouts';
 import { recordsByExercise } from '@/lib/prs';
 import { isDateKey, todayKey } from '@/lib/date';
+import { requireUser, unauthorized } from '@/lib/auth';
 
 export const dynamic = 'force-dynamic';
 
 /** Directory of every exercise ever logged, most recently trained first. */
 export async function GET(req: Request) {
+  const user = await requireUser();
+  if (!user) return unauthorized();
   const param = new URL(req.url).searchParams.get('today');
   const today = param && isDateKey(param) ? param : todayKey();
 
-  const records = [...recordsByExercise(await loadSets(), today).values()];
+  const records = [...recordsByExercise(await loadSets(user.id), today).values()];
 
   return NextResponse.json(
     records

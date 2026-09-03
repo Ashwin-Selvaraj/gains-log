@@ -1,6 +1,6 @@
 import { prisma } from '@/lib/prisma';
 import { readSettings } from '@/lib/settings';
-import { sendToAll } from '@/lib/push';
+import { sendToUser } from '@/lib/push';
 import { withJoins } from '@/lib/db-strategy';
 import type { DateKey } from '@/lib/date';
 
@@ -77,9 +77,10 @@ export type ReminderRun = {
  * the same evening a no-op.
  */
 export async function runEveningReminder(
+  userId: string,
   opts: { force?: boolean; at?: Date } = {},
 ): Promise<ReminderRun> {
-  const settings = await readSettings();
+  const settings = await readSettings(userId);
 
   if (!settings.reminderEnabled && !opts.force) {
     return { ran: false, reason: 'reminders are switched off' };
@@ -98,8 +99,8 @@ export async function runEveningReminder(
     return { ran: false, reason: 'window has passed for today' };
   }
 
-  const entry = await prisma.dailyEntry.findUnique({
-    where: { date },
+  const entry = await prisma.dailyEntry.findFirst({
+    where: { userId, date },
     include: { meals: true, sets: true },
     ...withJoins,
   });
@@ -112,12 +113,12 @@ export async function runEveningReminder(
   // The unique (kind, date) index is the idempotency guard: if the insert
   // fails, this evening's reminder has already gone out.
   try {
-    await prisma.notificationLog.create({ data: { kind: EVENING_REMINDER, date } });
+    await prisma.notificationLog.create({ data: { userId, kind: EVENING_REMINDER, date } });
   } catch {
     return { ran: false, reason: 'already sent today', missing };
   }
 
-  const result = await sendToAll({
+  const result = await sendToUser(userId, {
     title: 'Gains Log',
     body:
       missing.length === 1
@@ -128,7 +129,7 @@ export async function runEveningReminder(
   });
 
   await prisma.notificationLog.update({
-    where: { kind_date: { kind: EVENING_REMINDER, date } },
+    where: { userId_kind_date: { userId, kind: EVENING_REMINDER, date } },
     data: { reached: result.sent },
   });
 
@@ -137,3 +138,30 @@ export async function runEveningReminder(
 
 const fmt = (m: number) =>
   `${String(Math.floor(m / 60)).padStart(2, '0')}:${String(m % 60).padStart(2, '0')}`;
+
+/**
+ * Runs the reminder for everyone who has one switched on.
+ *
+ * Each user is evaluated against their own timezone and reminder time, so a
+ * single poll serves people in different zones correctly. One user's failure
+ * must not stop the others, hence the per-user try.
+ */
+export async function runRemindersForAllUsers(
+  opts: { at?: Date } = {},
+): Promise<{ checked: number; sent: number }> {
+  const users = await prisma.settings.findMany({
+    where: { reminderEnabled: true },
+    select: { userId: true },
+  });
+
+  let sent = 0;
+  for (const { userId } of users) {
+    try {
+      const result = await runEveningReminder(userId, opts);
+      if (result.ran) sent++;
+    } catch (err) {
+      console.error(`[reminders] user ${userId} failed`, err);
+    }
+  }
+  return { checked: users.length, sent };
+}

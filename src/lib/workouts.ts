@@ -11,10 +11,15 @@ import type { SetLike } from '@/lib/prs';
  * read joins the parent entry to flatten `date` onto the set.
  */
 export async function loadSets(
+  userId: string,
   filter: { keys?: string[]; since?: string } = {},
 ): Promise<SetLike[]> {
   const rows = await prisma.workoutSet.findMany({
     where: {
+      // userId is denormalised onto the set itself rather than reached through
+      // the parent day: this table is queried directly for records, and a join
+      // that was ever forgotten would return everyone's lifts.
+      userId,
       ...(filter.keys ? { exerciseKey: { in: filter.keys } } : {}),
       ...(filter.since ? { entry: { date: { gte: filter.since } } } : {}),
     },
@@ -34,11 +39,12 @@ export async function loadSets(
 }
 
 /** The exercise keys planned for a given weekday. */
-export async function planKeysForWeekday(weekday: number): Promise<
-  { key: string; name: string; sets: number; reps: string }[]
-> {
+export async function planKeysForWeekday(
+  userId: string,
+  weekday: number,
+): Promise<{ key: string; name: string; sets: number; reps: string }[]> {
   const day = await prisma.planDay.findUnique({
-    where: { weekday },
+    where: { userId_weekday: { userId, weekday } },
     include: { exercises: { orderBy: { position: 'asc' } } },
     ...withJoins,
   });

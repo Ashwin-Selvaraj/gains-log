@@ -3,10 +3,13 @@ import { prisma } from '@/lib/prisma';
 import { blankEntry, isEmptyEntry } from '@/lib/entries';
 import { dateRange, isDateKey, todayKey, type DateKey } from '@/lib/date';
 import { withJoins } from '@/lib/db-strategy';
+import { requireUser, unauthorized } from '@/lib/auth';
 
 export const dynamic = 'force-dynamic';
 
 export async function GET(req: Request) {
+  const user = await requireUser();
+  if (!user) return unauthorized();
   const params = new URL(req.url).searchParams;
   const take = Math.min(Number(params.get('limit') ?? 30) || 30, 120);
   const before = params.get('before'); // exclusive date cursor
@@ -14,7 +17,7 @@ export async function GET(req: Request) {
   const today = todayParam && isDateKey(todayParam) ? todayParam : todayKey();
 
   const rows = await prisma.dailyEntry.findMany({
-    where: before ? { date: { lt: before } } : undefined,
+    where: { userId: user.id, ...(before ? { date: { lt: before } } : {}) },
     include: {
       meetings: { orderBy: { time: 'asc' } },
       // Deliberately no `photoUrl` here. Photo estimates store a base64

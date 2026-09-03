@@ -3,12 +3,15 @@ import { prisma } from '@/lib/prisma';
 import { ensureEntryId } from '@/lib/entries';
 import { isDateKey } from '@/lib/date';
 import { exerciseKey } from '@/lib/prs';
+import { requireUser, unauthorized } from '@/lib/auth';
 
 export const dynamic = 'force-dynamic';
 
 type Params = { params: Promise<{ date: string }> };
 
 export async function POST(req: Request, { params }: Params) {
+  const user = await requireUser();
+  if (!user) return unauthorized();
   const { date } = await params;
   if (!isDateKey(date)) return NextResponse.json({ error: 'Bad date' }, { status: 400 });
 
@@ -32,12 +35,19 @@ export async function POST(req: Request, { params }: Params) {
     weightKg = w;
   }
 
-  const entryId = await ensureEntryId(date);
+  const entryId = await ensureEntryId(user.id, date);
 
   // Logging a set means you trained. Ticking the stamp separately is busywork.
   const [set] = await Promise.all([
     prisma.workoutSet.create({
-      data: { exercise, exerciseKey: exerciseKey(exercise), reps, weightKg, entryId },
+      data: {
+        exercise,
+        exerciseKey: exerciseKey(exercise),
+        reps,
+        weightKg,
+        userId: user.id,
+        entryId,
+      },
     }),
     prisma.dailyEntry.update({ where: { id: entryId }, data: { workoutDone: true } }),
   ]);

@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { ensureEntryId } from '@/lib/entries';
 import { isDateKey } from '@/lib/date';
+import { requireUser, unauthorized } from '@/lib/auth';
 import {
   PHOTO_KINDS,
   missingStorageConfig,
@@ -19,12 +20,15 @@ const MAX_BYTES = 8 * 1024 * 1024;
 const ALLOWED = ['image/jpeg', 'image/png', 'image/webp'];
 
 export async function GET(req: Request) {
+  const user = await requireUser();
+  if (!user) return unauthorized();
   const params = new URL(req.url).searchParams;
   const date = params.get('date');
   const kind = params.get('kind');
 
   const photos = await prisma.photo.findMany({
     where: {
+      userId: user.id,
       ...(date && isDateKey(date) ? { entry: { date } } : {}),
       ...(kind && PHOTO_KINDS.includes(kind as PhotoKind) ? { kind } : {}),
     },
@@ -44,6 +48,8 @@ export async function GET(req: Request) {
  * presigned URLs if photos ever get big or frequent.
  */
 export async function POST(req: Request) {
+  const user = await requireUser();
+  if (!user) return unauthorized();
   if (!storageConfigured) {
     return NextResponse.json(
       {
@@ -82,7 +88,7 @@ export async function POST(req: Request) {
   // The id is generated up front so it can name the object in the bucket, which
   // keeps the database row and the stored file trivially traceable to each other.
   const id = crypto.randomUUID().replace(/-/g, '').slice(0, 24);
-  const key = photoKey(kind, id, file.type);
+  const key = photoKey(kind, user.id, id, file.type);
   const bytes = new Uint8Array(await file.arrayBuffer());
 
   let url: string;
@@ -116,7 +122,8 @@ export async function POST(req: Request) {
       width: Number(form.get('width')) || null,
       height: Number(form.get('height')) || null,
       mealId: (form.get('mealId') as string) || null,
-      entryId: await ensureEntryId(date),
+      userId: user.id,
+      entryId: await ensureEntryId(user.id, date),
     },
   });
 

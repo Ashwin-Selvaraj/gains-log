@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { withMacros } from '@/app/api/presets/route';
+import { requireUser, unauthorized } from '@/lib/auth';
 
 export const dynamic = 'force-dynamic';
 
@@ -11,6 +12,8 @@ const include = {
 } as const;
 
 export async function PATCH(req: Request, { params }: Params) {
+  const user = await requireUser();
+  if (!user) return unauthorized();
   const { id } = await params;
   const body = (await req.json()) as Record<string, unknown>;
   const data: Record<string, unknown> = {};
@@ -44,12 +47,25 @@ export async function PATCH(req: Request, { params }: Params) {
     }
   }
 
+  const owned = await prisma.mealPreset.findFirst({
+    where: { id, userId: user.id },
+    select: { id: true },
+  });
+  if (!owned) return NextResponse.json({ error: 'Not your preset.' }, { status: 403 });
+
   const preset = await prisma.mealPreset.update({ where: { id }, data, include });
   return NextResponse.json(withMacros(preset));
 }
 
 export async function DELETE(_req: Request, { params }: Params) {
+  const user = await requireUser();
+  if (!user) return unauthorized();
   const { id } = await params;
-  await prisma.mealPreset.delete({ where: { id } });
+  // deleteMany, not delete: an id belonging to someone else matches nothing
+  // rather than deleting their row. A zero count therefore means "not yours or
+  // already gone" — answering 204 there would claim a deletion that never
+  // happened, and hide whatever sent the wrong id.
+  const { count } = await prisma.mealPreset.deleteMany({ where: { id, userId: user.id } });
+  if (!count) return NextResponse.json({ error: 'Not found.' }, { status: 404 });
   return new NextResponse(null, { status: 204 });
 }

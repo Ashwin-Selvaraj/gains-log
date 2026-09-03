@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { withJoins } from '@/lib/db-strategy';
 import { macrosFor, sumMacros, type Macros } from '@/lib/nutrition';
+import { requireUser, unauthorized } from '@/lib/auth';
 
 export const dynamic = 'force-dynamic';
 
@@ -48,7 +49,10 @@ export function withMacros(preset: PresetRow) {
 }
 
 export async function GET() {
+  const user = await requireUser();
+  if (!user) return unauthorized();
   const presets = await prisma.mealPreset.findMany({
+    where: { userId: user.id },
     include,
     orderBy: { createdAt: 'asc' },
     ...withJoins,
@@ -57,6 +61,8 @@ export async function GET() {
 }
 
 export async function POST(req: Request) {
+  const user = await requireUser();
+  if (!user) return unauthorized();
   const body = (await req.json()) as Record<string, unknown>;
   const name = String(body.name ?? '').trim().slice(0, 200);
   if (!name) return NextResponse.json({ error: 'name required' }, { status: 400 });
@@ -76,6 +82,7 @@ export async function POST(req: Request) {
 
   const preset = await prisma.mealPreset.create({
     data: {
+      userId: user.id,
       name,
       items: { create: items },
       // Manual macros only apply to a preset with no foods behind it.

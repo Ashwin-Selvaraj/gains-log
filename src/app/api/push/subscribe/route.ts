@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { pushConfigured } from '@/lib/push';
+import { requireUser, unauthorized } from '@/lib/auth';
 
 export const dynamic = 'force-dynamic';
 
@@ -11,6 +12,8 @@ type SubBody = {
 };
 
 export async function POST(req: Request) {
+  const user = await requireUser();
+  if (!user) return unauthorized();
   if (!pushConfigured) {
     return NextResponse.json({ error: 'Push is not configured on the server.' }, { status: 501 });
   }
@@ -29,21 +32,26 @@ export async function POST(req: Request) {
   const sub = await prisma.pushSubscription.upsert({
     where: { endpoint },
     create: {
+      userId: user.id,
       endpoint,
       p256dh,
       auth,
       userAgent: String(body.userAgent ?? '').slice(0, 300),
     },
-    update: { p256dh, auth, failureCount: 0 },
+    // userId is updated too: a shared device re-subscribed by a different
+    // person must move to them, not keep notifying the previous owner.
+    update: { userId: user.id, p256dh, auth, failureCount: 0 },
   });
 
   return NextResponse.json({ id: sub.id }, { status: 201 });
 }
 
 export async function DELETE(req: Request) {
+  const user = await requireUser();
+  if (!user) return unauthorized();
   const endpoint = new URL(req.url).searchParams.get('endpoint');
   if (endpoint) {
-    await prisma.pushSubscription.deleteMany({ where: { endpoint } });
+    await prisma.pushSubscription.deleteMany({ where: { endpoint, userId: user.id } });
   }
   return new NextResponse(null, { status: 204 });
 }

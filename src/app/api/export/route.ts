@@ -1,6 +1,7 @@
 import { prisma } from '@/lib/prisma';
 import { todayKey } from '@/lib/date';
 import { withJoins } from '@/lib/db-strategy';
+import { requireUser, unauthorized } from '@/lib/auth';
 
 export const dynamic = 'force-dynamic';
 
@@ -34,7 +35,10 @@ const HEADERS = [
 ];
 
 export async function GET() {
+  const user = await requireUser();
+  if (!user) return unauthorized();
   const entries = await prisma.dailyEntry.findMany({
+    where: { userId: user.id },
     include: { meetings: { orderBy: { time: 'asc' } }, meals: true },
     orderBy: { date: 'asc' },
     ...withJoins,

@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import Anthropic from '@anthropic-ai/sdk';
 import { prisma } from '@/lib/prisma';
 import { macrosFor, matchFood, sumMacros, type Macros } from '@/lib/nutrition';
+import { requireUser, unauthorized } from '@/lib/auth';
 
 export const dynamic = 'force-dynamic';
 export const maxDuration = 60;
@@ -93,6 +94,8 @@ export type EstimatedItem = {
 };
 
 export async function POST(req: Request) {
+  const user = await requireUser();
+  if (!user) return unauthorized();
   if (!process.env.ANTHROPIC_API_KEY) {
     return NextResponse.json(
       { error: 'ANTHROPIC_API_KEY is not set — add it to .env and restart.' },
@@ -145,7 +148,7 @@ export async function POST(req: Request) {
           },
         ],
       }),
-      prisma.food.findMany(),
+      prisma.food.findMany({ where: { OR: [{ userId: null }, { userId: user.id }] } }),
     ]);
 
     if (response.stop_reason === 'refusal') {

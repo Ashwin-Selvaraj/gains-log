@@ -171,7 +171,10 @@ function weeklyRate(points: { date: DateKey; weightKg: number | null }[]): numbe
   return (num / den) * 7; // slope is per day; report per week
 }
 
-export async function buildWeeklyReport(today: DateKey): Promise<WeeklyReport> {
+export async function buildWeeklyReport(
+  userId: string,
+  today: DateKey,
+): Promise<WeeklyReport> {
   const trendDays = dateRange(today, 28);
   const from = trendDays[0];
   const last7 = dateRange(today, 7);
@@ -179,16 +182,17 @@ export async function buildWeeklyReport(today: DateKey): Promise<WeeklyReport> {
 
   const [entries, settings, allSets, planDays] = await Promise.all([
     prisma.dailyEntry.findMany({
-      where: { date: { gte: from, lte: today } },
+      where: { userId, date: { gte: from, lte: today } },
       include: { meetings: true, meals: true, sets: true },
       orderBy: { date: 'asc' },
       ...withJoins,
     }),
-    readSettings(),
+    readSettings(userId),
     // Every set ever: a PR is only a PR against all history, which the 28-day
     // window above cannot tell you.
-    loadSets(),
+    loadSets(userId),
     prisma.planDay.findMany({
+      where: { userId },
       include: { exercises: { orderBy: { position: 'asc' } } },
       ...withJoins,
     }),

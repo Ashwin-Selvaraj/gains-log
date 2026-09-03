@@ -5,8 +5,6 @@ import { prisma } from '@/lib/prisma';
  * source. The defaults match the schema's, so a fresh database behaves exactly
  * as the hardcoded constants used to.
  */
-export const SINGLETON = 'singleton';
-
 export const DEFAULT_SETTINGS = {
   startWeightKg: 68,
   goalWeightKg: 85,
@@ -26,6 +24,7 @@ export const DEFAULT_SETTINGS = {
  */
 export type Settings = {
   id: string;
+  userId: string;
   startWeightKg: number;
   goalWeightKg: number;
   proteinTarget: number;
@@ -43,17 +42,17 @@ export type Settings = {
  * critical path of every read, for a row that only ever changes when you edit
  * a goal.
  */
-export async function readSettings(): Promise<Settings> {
-  const row = await prisma.settings.findUnique({ where: { id: SINGLETON } });
-  return row ?? { id: SINGLETON, ...DEFAULT_SETTINGS };
+export async function readSettings(userId: string): Promise<Settings> {
+  const row = await prisma.settings.findUnique({ where: { userId } });
+  return row ?? { id: '', userId, ...DEFAULT_SETTINGS };
 }
 
 /** Use when the row genuinely needs to exist, i.e. before writing to it. */
-export async function getSettings() {
+export async function getSettings(userId: string) {
   return prisma.settings.upsert({
-    where: { id: SINGLETON },
-    create: { id: SINGLETON },
-    update: { id: SINGLETON },
+    where: { userId },
+    create: { userId },
+    update: {},
   });
 }
 

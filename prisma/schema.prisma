@@ -18,8 +18,12 @@ datasource db {
 /// user's local timezone — storing it as text keeps "today" unambiguous no
 /// matter which device or server timezone writes the row.
 model DailyEntry {
+  /// Owner. Every query is scoped by this; see requireUser() in src/lib/auth.ts.
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
   id           String  @id @default(cuid())
-  date         String  @unique
+  date         String
   workoutDone  Boolean @default(false)
   learningDone Boolean @default(false)
   sleptWell    Boolean @default(false)
@@ -48,11 +52,16 @@ model DailyEntry {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  @@index([date])
+  @@unique([userId, date])
+  @@index([userId, date])
 }
 
 model Meeting {
-  id      String @id @default(cuid())
+  /// Owner. Every query is scoped by this; see requireUser() in src/lib/auth.ts.
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  id      String     @id @default(cuid())
   /// "HH:MM", 24-hour.
   time    String
   title   String
@@ -62,10 +71,15 @@ model Meeting {
   createdAt DateTime @default(now())
 
   @@index([entryId])
+  @@index([userId])
 }
 
 model MealEntry {
-  id       String  @id @default(cuid())
+  /// Owner. Every query is scoped by this; see requireUser() in src/lib/auth.ts.
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  id       String     @id @default(cuid())
   name     String
   calories Int?
   /// Float, not Int, like the other macros: protein is the metric this whole
@@ -83,7 +97,7 @@ model MealEntry {
   grams    Float?
   /// "manual" | "preset" | "photo-estimate" — kept as text so the schema works
   /// on SQLite as well as Postgres.
-  source   String  @default("manual")
+  source   String     @default("manual")
   photoUrl String?
   entryId  String
   entry    DailyEntry @relation(fields: [entryId], references: [id], onDelete: Cascade)
@@ -91,12 +105,16 @@ model MealEntry {
   createdAt DateTime @default(now())
 
   @@index([entryId])
+  @@index([userId])
 }
 
-/// Single row (id is always "singleton"). Targets used to live in
-/// src/lib/goals.ts as constants; they're here so they can be edited in the app.
+/// One row per user. Targets used to live in src/lib/goals.ts as constants;
+/// they're here so they can be edited in the app.
 model Settings {
-  id                String @id @default("singleton")
+  id                String @id @default(cuid())
+  /// One settings row per user; replaced the former "singleton" row.
+  userId            String @unique
+  user              User   @relation(fields: [userId], references: [id], onDelete: Cascade)
   startWeightKg     Float  @default(68)
   goalWeightKg      Float  @default(85)
   proteinTarget     Int    @default(140)
@@ -120,6 +138,10 @@ model Settings {
 /// account on a phone and a laptop are two subscriptions, and either can be
 /// revoked independently by the browser at any time.
 model PushSubscription {
+  /// Owner. Every query is scoped by this; see requireUser() in src/lib/auth.ts.
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
   id        String @id @default(cuid())
   /// The push service URL. Unique: re-subscribing the same browser returns the
   /// same endpoint, and duplicates would mean duplicate notifications.
@@ -142,14 +164,18 @@ model PushSubscription {
 /// reminder window, and the insert failing is how it knows it already sent.
 /// That also makes it survive an app restart at an awkward minute.
 model NotificationLog {
-  id     String   @id @default(cuid())
-  kind   String
-  date   String
-  sentAt DateTime @default(now())
-  /// How many subscriptions it actually reached.
-  reached Int     @default(0)
+  /// Owner. Every query is scoped by this; see requireUser() in src/lib/auth.ts.
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
 
-  @@unique([kind, date])
+  id      String   @id @default(cuid())
+  kind    String
+  date    String
+  sentAt  DateTime @default(now())
+  /// How many subscriptions it actually reached.
+  reached Int      @default(0)
+
+  @@unique([userId, kind, date])
   @@index([date])
 }
 
@@ -157,48 +183,59 @@ model NotificationLog {
 /// A repeating week rather than per-date assignment: that's how a program is
 /// actually written, and it means a new week needs no data entry.
 model PlanDay {
+  /// Owner. Every query is scoped by this; see requireUser() in src/lib/auth.ts.
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
   id      String @id @default(cuid())
-  weekday Int    @unique
+  weekday Int
   /// "Push", "Pull", "Legs", "Rest" …
   name    String
 
   exercises PlanExercise[]
+
+  @@unique([userId, weekday])
 }
 
 model PlanExercise {
-  id        String  @id @default(cuid())
-  name      String
+  id          String  @id @default(cuid())
+  name        String
   /// Matches WorkoutSet.exerciseKey so plan and actual line up by identity
   /// rather than by exact spelling.
-  exerciseKey String @default("")
+  exerciseKey String  @default("")
   /// Target sets, and target reps as free text so "8-12" or "AMRAP" both work.
-  sets      Int     @default(3)
-  reps      String  @default("8-12")
-  position  Int     @default(0)
-  planDayId String
-  planDay   PlanDay @relation(fields: [planDayId], references: [id], onDelete: Cascade)
+  sets        Int     @default(3)
+  reps        String  @default("8-12")
+  position    Int     @default(0)
+  planDayId   String
+  planDay     PlanDay @relation(fields: [planDayId], references: [id], onDelete: Cascade)
 
   @@index([planDayId])
 }
 
 /// One actual set performed. The plan says what to do; this records what happened.
 model WorkoutSet {
-  id       String @id @default(cuid())
+  /// Owner. Every query is scoped by this; see requireUser() in src/lib/auth.ts.
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  id          String     @id @default(cuid())
   /// Display name, exactly as typed.
-  exercise String
+  exercise    String
   /// Normalised identity (see exerciseKey() in src/lib/prs.ts). Without this,
   /// "Bench press" and "bench press" would keep separate personal records.
-  exerciseKey String @default("")
-  reps     Int
-  weightKg Float?
-  entryId  String
-  entry    DailyEntry @relation(fields: [entryId], references: [id], onDelete: Cascade)
+  exerciseKey String     @default("")
+  reps        Int
+  weightKg    Float?
+  entryId     String
+  entry       DailyEntry @relation(fields: [entryId], references: [id], onDelete: Cascade)
 
   createdAt DateTime @default(now())
 
   @@index([entryId])
   @@index([exerciseKey])
   @@index([exerciseKey, createdAt])
+  @@index([userId, exerciseKey])
 }
 
 /// An exercise moved from a day it was missed onto a later day.
@@ -208,6 +245,10 @@ model WorkoutSet {
 /// It carries its own target sets/reps so that editing the weekly plan later
 /// doesn't silently change what was promised.
 model CarriedExercise {
+  /// Owner. Every query is scoped by this; see requireUser() in src/lib/auth.ts.
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
   id          String @id @default(cuid())
   name        String
   exerciseKey String @default("")
@@ -224,6 +265,7 @@ model CarriedExercise {
 
   @@index([toDate])
   @@index([fromDate])
+  @@index([userId, toDate])
 }
 
 /// A photo attached to a day — a gym/progress shot, or the plate behind a meal.
@@ -231,6 +273,10 @@ model CarriedExercise {
 /// here. `key` is kept separately from `url` so the object can still be deleted
 /// from the bucket if the public base URL ever changes (custom domain, etc.).
 model Photo {
+  /// Owner. Every query is scoped by this; see requireUser() in src/lib/auth.ts.
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
   id      String @id @default(cuid())
   /// "progress" | "meal" | "other" — also the top-level folder in the bucket.
   kind    String @default("progress")
@@ -251,6 +297,7 @@ model Photo {
 
   @@index([entryId])
   @@index([kind])
+  @@index([userId, kind])
 }
 
 /// A canonical food with macros stored per 100 g — the single basis everything
@@ -258,14 +305,18 @@ model Photo {
 /// composition data (see prisma/foods.ts); every value is editable in the app
 /// because published figures are averages and your dosa is not the average dosa.
 model Food {
-  id       String @id @default(cuid())
+  id       String  @id @default(cuid())
+  /// Null for the shared seeded table, which every user can read but not edit.
+  /// Set for a food a user added themselves, visible only to them.
+  userId   String?
+  user     User?   @relation(fields: [userId], references: [id], onDelete: Cascade)
   name     String
   /// Normalised name for lookup and search. Same idea as WorkoutSet.exerciseKey.
-  nameKey  String @unique
+  nameKey  String
   /// Comma-separated lowercase alternates ("dosai,plain dosa") so both search
   /// and the photo estimator can find a food by whatever it was called.
-  aliases  String @default("")
-  category String @default("other")
+  aliases  String  @default("")
+  category String  @default("other")
 
   kcalPer100g    Float
   proteinPer100g Float
@@ -282,14 +333,21 @@ model Food {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
+  /// Scoped to the owner so a personal "Dosa" can coexist with the shared one.
+  @@unique([userId, nameKey])
   @@index([nameKey])
+  @@index([userId])
   @@index([category])
 }
 
 /// A saved combination, e.g. "5 idlis + 2 eggs". Built from Food rows rather
 /// than hardcoded numbers, so fixing a Food's macros fixes every preset using it.
 model MealPreset {
-  id    String @id @default(cuid())
+  /// Owner. Every query is scoped by this; see requireUser() in src/lib/auth.ts.
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  id    String           @id @default(cuid())
   name  String
   items MealPresetItem[]
 
@@ -300,17 +358,101 @@ model MealPreset {
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+
+  @@index([userId])
 }
 
 model MealPresetItem {
-  id       String @id @default(cuid())
+  id       String     @id @default(cuid())
   presetId String
   preset   MealPreset @relation(fields: [presetId], references: [id], onDelete: Cascade)
   foodId   String
   food     Food       @relation(fields: [foodId], references: [id], onDelete: Cascade)
   grams    Float
-  position Int    @default(0)
+  position Int        @default(0)
 
   @@index([presetId])
   @@index([foodId])
+}
+
+/**
+ * ── Accounts ─────────────────────────────────────────────────────────────
+ * The four models below are Auth.js's required shape (User, Account, Session,
+ * VerificationToken). Field names are dictated by @auth/prisma-adapter and must
+ * not be renamed, which is why they break this file's usual naming style.
+ */
+
+model User {
+  id            String    @id @default(cuid())
+  name          String?
+  email         String    @unique
+  emailVerified DateTime?
+  image         String?
+
+  createdAt DateTime @default(now())
+
+  accounts Account[]
+  sessions Session[]
+
+  entries       DailyEntry[]
+  meetings      Meeting[]
+  meals         MealEntry[]
+  sets          WorkoutSet[]
+  photos        Photo[]
+  planDays      PlanDay[]
+  presets       MealPreset[]
+  carried       CarriedExercise[]
+  foods         Food[]
+  settings      Settings?
+  subscriptions PushSubscription[]
+  notifications NotificationLog[]
+}
+
+model Account {
+  id                String  @id @default(cuid())
+  userId            String
+  type              String
+  provider          String
+  providerAccountId String
+  refresh_token     String?
+  access_token      String?
+  expires_at        Int?
+  token_type        String?
+  scope             String?
+  id_token          String?
+  session_state     String?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, providerAccountId])
+  @@index([userId])
+}
+
+model Session {
+  id           String   @id @default(cuid())
+  sessionToken String   @unique
+  userId       String
+  expires      DateTime
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+}
+
+model VerificationToken {
+  identifier String
+  token      String
+  expires    DateTime
+
+  @@unique([identifier, token])
+}
+
+/// The invite list. Sign-in is refused for any address not present here, so a
+/// stranger with the URL cannot create an account, spend the Anthropic credits
+/// or fill the R2 bucket.
+model AllowedEmail {
+  id      String   @id @default(cuid())
+  email   String   @unique
+  note    String   @default("")
+  addedAt DateTime @default(now())
 }

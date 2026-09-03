@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
-import { sendToAll, pushConfigured } from '@/lib/push';
+import { sendToUser, pushConfigured } from '@/lib/push';
 import { runEveningReminder } from '@/lib/reminders';
+import { requireUser, unauthorized } from '@/lib/auth';
 
 export const dynamic = 'force-dynamic';
 
@@ -10,16 +11,18 @@ export const dynamic = 'force-dynamic';
  * `?reminder=1` sends the real evening reminder instead of a canned message.
  */
 export async function POST(req: Request) {
+  const user = await requireUser();
+  if (!user) return unauthorized();
   if (!pushConfigured) {
     return NextResponse.json({ error: 'Push is not configured on the server.' }, { status: 501 });
   }
 
   if (new URL(req.url).searchParams.get('reminder') === '1') {
-    return NextResponse.json(await runEveningReminder({ force: true }));
+    return NextResponse.json(await runEveningReminder(user.id, { force: true }));
   }
 
   return NextResponse.json(
-    await sendToAll({
+    await sendToUser(user.id, {
       title: 'Gains Log',
       body: 'Notifications are working. This is what an evening nudge looks like.',
       url: '/',

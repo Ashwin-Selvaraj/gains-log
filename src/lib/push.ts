@@ -45,21 +45,20 @@ export type PushPayload = {
 };
 
 /**
- * Sends to every stored subscription.
+ * Sends to every device belonging to one user.
  *
  * Failures are not equal: 404 and 410 mean the browser threw the subscription
  * away (uninstalled, permission revoked) and it should be deleted, while a 5xx
  * is the push service having a bad minute and should be retried later. Deleting
  * on a transient error would silently unsubscribe someone.
  */
-export async function sendToAll(payload: PushPayload): Promise<{
-  sent: number;
-  removed: number;
-  failed: number;
-}> {
+export async function sendToUser(
+  userId: string,
+  payload: PushPayload,
+): Promise<{ sent: number; removed: number; failed: number }> {
   if (!pushConfigured) return { sent: 0, removed: 0, failed: 0 };
 
-  const subs = await prisma.pushSubscription.findMany();
+  const subs = await prisma.pushSubscription.findMany({ where: { userId } });
   let sent = 0;
   let removed = 0;
   let failed = 0;
