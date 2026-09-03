@@ -1,3 +1,4 @@
+import Link from 'next/link';
 import { auth, signOut } from '@/lib/auth';
 
 /**
@@ -35,6 +36,29 @@ export async function AccountMenu() {
         <p className="truncate border-b border-line px-3 py-2.5 text-xs text-muted" title={user.email}>
           {user.email}
         </p>
+
+        <Link
+          href="/profile"
+          className="block px-3 py-2.5 text-sm text-ink transition-colors hover:bg-line/40"
+        >
+          Profile
+        </Link>
+        <Link
+          href="/goals"
+          className="block px-3 py-2.5 text-sm text-ink transition-colors hover:bg-line/40"
+        >
+          Goals &amp; targets
+        </Link>
+        {user.isAdmin && (
+          <Link
+            href="/admin"
+            className="block px-3 py-2.5 text-sm text-ink transition-colors hover:bg-line/40"
+          >
+            Manage access
+          </Link>
+        )}
+
+        <div className="border-t border-line" />
         <form
           action={async () => {
             'use server';

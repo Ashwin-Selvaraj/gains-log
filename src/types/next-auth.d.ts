@@ -1,12 +1,18 @@
 import type { DefaultSession } from 'next-auth';
 
-/**
- * Auth.js's Session type has no user id by default. The session callback in
- * src/lib/auth.ts puts one there, so the type has to say so — otherwise every
- * `session.user.id` in the codebase is an error.
- */
 declare module 'next-auth' {
   interface Session {
-    user: { id: string } & DefaultSession['user'];
+    user: {
+      id: string;
+      /** Grants the /admin screen. Mirrors User.isAdmin, refreshed on sign-in. */
+      isAdmin?: boolean;
+    } & DefaultSession['user'];
+  }
+}
+
+declare module 'next-auth/jwt' {
+  interface JWT {
+    uid?: string;
+    isAdmin?: boolean;
   }
 }

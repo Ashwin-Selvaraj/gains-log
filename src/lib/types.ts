@@ -6,6 +6,10 @@ export type Meeting = {
   id: string;
   time: string;
   title: string;
+  /** Set once this meeting has been pushed to Google Calendar. */
+  calendarEventId?: string | null;
+  /** Why the last calendar attempt failed, if it did. */
+  calendarError?: string | null;
 };
 
 export type Meal = {
@@ -129,6 +133,8 @@ export type PlanDay = {
 };
 
 export type Settings = {
+  /** Derived, not a column: whether Google Calendar access has been granted. */
+  calendarConnected?: boolean;
   id: string;
   startWeightKg: number;
   goalWeightKg: number;

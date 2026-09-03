@@ -13,6 +13,10 @@ export const WEEKDAY_NAMES = [
   'Saturday',
 ] as const;
 
+/**
+ * The four daily habits. Still four for scoring purposes — the report, the
+ * history strip and the streak all count them the same way.
+ */
 export const HABITS = [
   { key: 'workoutDone', label: 'Workout', icon: '🏋️' },
   { key: 'waterDone', label: 'Water', icon: '💧' },
@@ -20,7 +24,26 @@ export const HABITS = [
   { key: 'sleptWell', label: 'Slept well', icon: '😴' },
 ] as const;
 
+/**
+ * The two that are genuinely yes/no, and so get a stamp on Today.
+ *
+ * Water and sleep were stamps too, which made them meaningless: "drank water"
+ * is true of every living day. Both are quantities, so they moved to sliders
+ * lower down the screen (see MeasureSlider) — water's tick is now derived from
+ * the litres, and sleep keeps a separate "slept well" toggle because how
+ * rested you feel is not the same fact as how long you were in bed.
+ */
+export const STAMP_HABITS = HABITS.filter(
+  (h) => h.key === 'workoutDone' || h.key === 'learningDone',
+);
+
 export type HabitKey = (typeof HABITS)[number]['key'];
+
+/** Sensible ceilings and defaults for the measured habits. */
+export const MEASURES = {
+  water: { max: 6, step: 0.25, target: 3, unit: 'L', icon: '💧', label: 'Water' },
+  sleep: { max: 12, step: 0.25, target: 7.5, unit: 'hrs', icon: '😴', label: 'Sleep' },
+} as const;
 
 export const MEAL_SOURCES = ['manual', 'preset', 'photo-estimate', 'food'] as const;
 export type MealSource = (typeof MEAL_SOURCES)[number];

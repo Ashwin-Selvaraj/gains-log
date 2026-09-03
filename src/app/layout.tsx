@@ -5,6 +5,7 @@ import { ServiceWorker } from '@/components/ServiceWorker';
 import { SyncBanner } from '@/components/SyncBanner';
 import { AppHeader } from '@/components/AppHeader';
 import { auth } from '@/lib/auth';
+import { Splash } from '@/components/Splash';
 
 export const metadata: Metadata = {
   // The template gives every page its own tab title ("Report · Gains Log")
@@ -45,6 +46,7 @@ export default async function RootLayout({ children }: { children: React.ReactNo
   return (
     <html lang="en">
       <body className="min-h-dvh antialiased">
+        <Splash />
         <ServiceWorker />
         <SyncBanner />
         {signedIn && <AppHeader />}

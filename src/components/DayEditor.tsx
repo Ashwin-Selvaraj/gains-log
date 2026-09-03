@@ -1,7 +1,9 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { HABITS } from '@/lib/goals';
+import Link from 'next/link';
+import { MEASURES, STAMP_HABITS } from '@/lib/goals';
+import { MeasureSlider } from '@/components/MeasureSlider';
 import { mutate, OfflineQueuedError } from '@/lib/sync';
 import type {
   CarriedExercise,
@@ -184,7 +186,7 @@ export function DayEditor({
   );
 
   const addMeeting = useCallback(
-    async (time: string, title: string) => {
+    async (time: string, title: string, addToCalendar: boolean) => {
       const optimistic: Meeting = { id: `tmp-${crypto.randomUUID()}`, time, title };
       setEntry((prev) => ({
         ...prev,
@@ -196,6 +198,7 @@ export function DayEditor({
         const saved = await mutate<Meeting>(`/api/entries/${date}/meetings`, 'POST', {
           time,
           title,
+          addToCalendar,
         });
         setEntry((prev) => ({
           ...prev,
@@ -216,6 +219,25 @@ export function DayEditor({
       }));
       if (id.startsWith('tmp-')) return;
       await mutate(`/api/meetings/${id}`, 'DELETE').catch(report);
+    },
+    [report],
+  );
+
+  /** Flip one meeting's calendar sync. The server does the Google side. */
+  const toggleMeetingCalendar = useCallback(
+    async (id: string, addToCalendar: boolean) => {
+      if (id.startsWith('tmp-')) return;
+      try {
+        const saved = await mutate<Meeting>(`/api/meetings/${id}`, 'PATCH', {
+          addToCalendar,
+        });
+        setEntry((prev) => ({
+          ...prev,
+          meetings: prev.meetings.map((m) => (m.id === id ? saved : m)),
+        }));
+      } catch (err) {
+        report(err);
+      }
     },
     [report],
   );
@@ -320,8 +342,10 @@ export function DayEditor({
         </p>
       )}
 
+      {/* Only the two yes/no habits are stamps. Water and sleep are amounts,
+          and live in the Recovery card lower down. */}
       <section aria-label="Habits" className="grid grid-cols-2 gap-3">
-        {HABITS.map(({ key, label, icon }) => (
+        {STAMP_HABITS.map(({ key, label, icon }) => (
           <StampButton
             key={key}
             label={label}
@@ -361,20 +385,6 @@ export function DayEditor({
             step="0.1"
             onChange={(v) => stage('weightKg', v)}
           />
-          <NumberField
-            label="Sleep"
-            unit="hrs"
-            value={entry.sleepHours}
-            step="0.5"
-            onChange={(v) => stage('sleepHours', v)}
-          />
-          <NumberField
-            label="Water"
-            unit="L"
-            value={entry.waterLitres}
-            step="0.25"
-            onChange={(v) => stage('waterLitres', v)}
-          />
         </div>
 
         <div>
@@ -404,10 +414,51 @@ export function DayEditor({
         </div>
       </section>
 
+      <section className="card space-y-5" aria-label="Recovery and hydration">
+        <MeasureSlider
+          {...MEASURES.water}
+          value={entry.waterLitres}
+          onChange={(litres) => {
+            stage('waterLitres', litres === null ? '' : String(litres));
+            // The tick is derived, not separately toggled. Keeping a manual
+            // Water stamp alongside a litres figure let the two disagree —
+            // ticked but zero litres, or two litres and no tick — and the
+            // report counts the tick.
+            stage('waterDone', (litres ?? 0) > 0);
+          }}
+        />
+
+        <div className="border-t border-line pt-5">
+          <MeasureSlider
+            {...MEASURES.sleep}
+            value={entry.sleepHours}
+            onChange={(hours) => stage('sleepHours', hours === null ? '' : String(hours))}
+          />
+
+          {/* Hours and quality are different facts: eight restless hours is not
+              a good night, and six good ones can be. */}
+          <button
+            type="button"
+            aria-pressed={entry.sleptWell}
+            onClick={() => stage('sleptWell', !entry.sleptWell)}
+            className={`mt-2 inline-flex min-h-[40px] items-center gap-2 rounded-xl border px-3.5 text-sm transition active:scale-[0.98] ${
+              entry.sleptWell
+                ? 'border-accent/40 bg-accent/10 text-accent'
+                : 'border-line bg-surface text-muted'
+            }`}
+          >
+            <span aria-hidden>{entry.sleptWell ? '✓' : '○'}</span>
+            Slept well
+          </button>
+        </div>
+      </section>
+
       <MeetingsSection
         meetings={entry.meetings}
         onAdd={addMeeting}
         onRemove={removeMeeting}
+        onToggleCalendar={toggleMeetingCalendar}
+        calendarConnected={Boolean(settings?.calendarConnected)}
       />
 
       <MealsSection
@@ -472,19 +523,28 @@ function MeetingsSection({
   meetings,
   onAdd,
   onRemove,
+  onToggleCalendar,
+  calendarConnected,
 }: {
   meetings: Meeting[];
-  onAdd: (time: string, title: string) => void;
+  onAdd: (time: string, title: string, addToCalendar: boolean) => void;
   onRemove: (id: string) => void;
+  onToggleCalendar: (id: string, addToCalendar: boolean) => void;
+  calendarConnected: boolean;
 }) {
   const [time, setTime] = useState('');
   const [title, setTitle] = useState('');
+  // Off by default and reset after each add: a meeting typed here is often a
+  // note to self, and quietly putting every one of them on a real calendar
+  // other people can see is not a default anyone asked for.
+  const [toCalendar, setToCalendar] = useState(false);
 
   function submit(e: React.FormEvent) {
     e.preventDefault();
     if (!time || !title.trim()) return;
-    onAdd(time, title.trim());
+    onAdd(time, title.trim(), toCalendar && calendarConnected);
     setTitle('');
+    setToCalendar(false);
   }
 
   return (
@@ -501,6 +561,34 @@ function MeetingsSection({
             >
               <span className="font-medium tabular-nums">{m.time}</span>
               <span className="text-muted">{m.title}</span>
+
+              {calendarConnected && !m.id.startsWith('tmp-') && (
+                <button
+                  type="button"
+                  onClick={() => onToggleCalendar(m.id, !m.calendarEventId)}
+                  aria-pressed={Boolean(m.calendarEventId)}
+                  title={
+                    m.calendarError
+                      ? m.calendarError
+                      : m.calendarEventId
+                        ? 'On your Google Calendar — tap to remove it'
+                        : 'Add to Google Calendar'
+                  }
+                  className={`flex h-7 w-7 items-center justify-center rounded-full transition-colors ${
+                    m.calendarError
+                      ? 'text-amber-600 dark:text-amber-400'
+                      : m.calendarEventId
+                        ? 'text-accent'
+                        : 'text-muted hover:bg-line'
+                  }`}
+                >
+                  <span aria-hidden>{m.calendarError ? '!' : '📅'}</span>
+                  <span className="sr-only">
+                    {m.calendarEventId ? 'Remove from' : 'Add to'} Google Calendar
+                  </span>
+                </button>
+              )}
+
               <button
                 type="button"
                 onClick={() => onRemove(m.id)}
@@ -515,24 +603,45 @@ function MeetingsSection({
         </ul>
       )}
 
-      <form onSubmit={submit} className="flex gap-2">
-        <input
-          type="time"
-          className="field w-32 shrink-0"
-          value={time}
-          onChange={(e) => setTime(e.target.value)}
-          aria-label="Meeting time"
-        />
-        <input
-          className="field"
-          placeholder="Standup"
-          value={title}
-          onChange={(e) => setTitle(e.target.value)}
-          aria-label="Meeting title"
-        />
-        <button type="submit" className="btn-quiet shrink-0 px-4" disabled={!time || !title.trim()}>
-          Add
-        </button>
+      <form onSubmit={submit} className="space-y-2">
+        <div className="flex gap-2">
+          <input
+            type="time"
+            className="field w-32 shrink-0"
+            value={time}
+            onChange={(e) => setTime(e.target.value)}
+            aria-label="Meeting time"
+          />
+          <input
+            className="field"
+            placeholder="Standup"
+            value={title}
+            onChange={(e) => setTitle(e.target.value)}
+            aria-label="Meeting title"
+          />
+          <button type="submit" className="btn-quiet shrink-0 px-4" disabled={!time || !title.trim()}>
+            Add
+          </button>
+        </div>
+
+        {calendarConnected ? (
+          <label className="flex items-center gap-2.5 px-1 text-sm text-muted">
+            <input
+              type="checkbox"
+              className="h-4 w-4 accent-[rgb(var(--accent))]"
+              checked={toCalendar}
+              onChange={(e) => setToCalendar(e.target.checked)}
+            />
+            Also add to Google Calendar
+          </label>
+        ) : (
+          <p className="px-1 text-xs text-muted">
+            <Link href="/profile" className="underline underline-offset-2">
+              Connect Google Calendar
+            </Link>{' '}
+            to push meetings to it.
+          </p>
+        )}
       </form>
     </section>
   );

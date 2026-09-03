@@ -68,6 +68,17 @@ model Meeting {
   entryId String
   entry   DailyEntry @relation(fields: [entryId], references: [id], onDelete: Cascade)
 
+  /// Google Calendar event id, set once the meeting has been pushed there.
+  /// Null means it lives only in this app. Storing the id is what makes the
+  /// sync two-way enough to matter: editing or deleting the meeting here can
+  /// find the event it created rather than leaving an orphan on the calendar.
+  calendarEventId String?
+  /// Why the last sync attempt failed, surfaced in the UI. A calendar write
+  /// crosses the network to Google and can fail long after the meeting was
+  /// saved; failing silently would leave you trusting a reminder that is not
+  /// actually on your calendar.
+  calendarError   String?
+
   createdAt DateTime @default(now())
 
   @@index([entryId])
@@ -115,6 +126,9 @@ model Settings {
   /// One settings row per user; replaced the former "singleton" row.
   userId            String @unique
   user              User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  /// Centimetres. Needed for BMI; null until asked for, so the profile can
+  /// tell the difference between "not set" and a real value.
+  heightCm          Float?
   startWeightKg     Float  @default(68)
   goalWeightKg      Float  @default(85)
   proteinTarget     Int    @default(140)
@@ -389,6 +403,11 @@ model User {
   emailVerified DateTime?
   image         String?
 
+  /// Grants the admin screen, where the invite list is managed. Held on the
+  /// row rather than in an env var so the master account survives redeploys
+  /// and can be handed over without a code change.
+  isAdmin Boolean @default(false)
+
   createdAt DateTime @default(now())
 
   accounts Account[]
@@ -450,9 +469,15 @@ model VerificationToken {
 /// The invite list. Sign-in is refused for any address not present here, so a
 /// stranger with the URL cannot create an account, spend the Anthropic credits
 /// or fill the R2 bucket.
+/// The invite list. Sole source of truth for who may sign in — there is no
+/// env-var equivalent, so access is managed from the admin screen rather than
+/// by editing a file on the server and restarting.
 model AllowedEmail {
   id      String   @id @default(cuid())
   email   String   @unique
   note    String   @default("")
+  /// Email of the admin who added this address, for an audit trail. Empty for
+  /// rows created by the migration that seeded the first account.
+  addedBy String   @default("")
   addedAt DateTime @default(now())
 }

@@ -2,13 +2,24 @@ import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { SETTINGS_BOUNDS, getSettings } from '@/lib/settings';
 import { requireUser, unauthorized } from '@/lib/auth';
+import { calendarConnected } from '@/lib/calendar';
 
 export const dynamic = 'force-dynamic';
 
 export async function GET() {
   const user = await requireUser();
   if (!user) return unauthorized();
-  return NextResponse.json(await getSettings(user.id));
+
+  // calendarConnected is derived from the linked Google account, not a column.
+  // It rides along here rather than in its own endpoint because the Today
+  // screen already fetches settings, and the meetings card needs to know
+  // whether to offer the sync toggle — a second request for one boolean would
+  // cost a round trip on the screen most sensitive to them.
+  const [settings, connected] = await Promise.all([
+    getSettings(user.id),
+    calendarConnected(user.id).catch(() => false),
+  ]);
+  return NextResponse.json({ ...settings, calendarConnected: connected });
 }
 
 export async function PATCH(req: Request) {
@@ -28,7 +39,7 @@ export async function PATCH(req: Request) {
       );
     }
     // Only weight targets are fractional; the rest are whole numbers.
-    data[key] = key.endsWith('Kg') ? n : Math.round(n);
+    data[key] = key.endsWith('Kg') || key.endsWith('Cm') ? n : Math.round(n);
   }
 
   // --- reminder settings, which aren't numeric bounds ---------------------

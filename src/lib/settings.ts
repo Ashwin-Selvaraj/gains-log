@@ -6,6 +6,7 @@ import { prisma } from '@/lib/prisma';
  * as the hardcoded constants used to.
  */
 export const DEFAULT_SETTINGS = {
+  heightCm: null,
   startWeightKg: 68,
   goalWeightKg: 85,
   proteinTarget: 140,
@@ -25,6 +26,7 @@ export const DEFAULT_SETTINGS = {
 export type Settings = {
   id: string;
   userId: string;
+  heightCm: number | null;
   startWeightKg: number;
   goalWeightKg: number;
   proteinTarget: number;
@@ -59,6 +61,7 @@ export async function getSettings(userId: string) {
 /** Field name -> [min, max]. Keeps a typo from making the report nonsense. */
 /** Numeric fields only — the reminder fields are validated separately. */
 export const SETTINGS_BOUNDS: Record<string, [number, number]> = {
+  heightCm: [80, 250],
   startWeightKg: [20, 400],
   goalWeightKg: [20, 400],
   proteinTarget: [0, 500],

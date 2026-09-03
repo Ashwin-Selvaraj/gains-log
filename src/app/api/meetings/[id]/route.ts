@@ -1,16 +1,31 @@
 import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { requireUser, unauthorized } from '@/lib/auth';
+import { readSettings } from '@/lib/settings';
+import { CalendarError, createEvent, deleteEvent, updateEvent } from '@/lib/calendar';
 
 export const dynamic = 'force-dynamic';
 
 type Params = { params: Promise<{ id: string }> };
 
+/** Turns a thrown CalendarError into something worth showing on a phone. */
+function explain(err: unknown): string {
+  if (err instanceof CalendarError) {
+    return err.needsReconnect ? 'Reconnect Google Calendar in your profile.' : err.message;
+  }
+  return 'Could not reach Google Calendar.';
+}
+
 export async function PATCH(req: Request, { params }: Params) {
   const user = await requireUser();
   if (!user) return unauthorized();
   const { id } = await params;
-  const body = (await req.json()) as { time?: string; title?: string };
+
+  const body = (await req.json()) as {
+    time?: string;
+    title?: string;
+    addToCalendar?: boolean;
+  };
   const data: { time?: string; title?: string } = {};
 
   if (body.time !== undefined) {
@@ -26,24 +41,73 @@ export async function PATCH(req: Request, { params }: Params) {
     data.title = title;
   }
 
-  const owned = await prisma.meeting.findFirst({
+  const existing = await prisma.meeting.findFirst({
     where: { id, userId: user.id },
-    select: { id: true },
+    include: { entry: { select: { date: true } } },
   });
-  if (!owned) return NextResponse.json({ error: 'Not your meeting.' }, { status: 403 });
+  if (!existing) return NextResponse.json({ error: 'Not your meeting.' }, { status: 403 });
 
-  return NextResponse.json(await prisma.meeting.update({ where: { id }, data }));
+  let meeting = await prisma.meeting.update({ where: { id }, data });
+
+  const wanted = body.addToCalendar;
+  const on = Boolean(existing.calendarEventId);
+  const details = {
+    title: meeting.title,
+    time: meeting.time,
+    date: existing.entry.date,
+    timezone: (await readSettings(user.id)).timezone,
+  };
+
+  try {
+    if (wanted === true && !on) {
+      const eventId = await createEvent(user.id, details);
+      meeting = await prisma.meeting.update({
+        where: { id },
+        data: { calendarEventId: eventId, calendarError: null },
+      });
+    } else if (wanted === false && on) {
+      await deleteEvent(user.id, existing.calendarEventId!);
+      meeting = await prisma.meeting.update({
+        where: { id },
+        data: { calendarEventId: null, calendarError: null },
+      });
+    } else if (on && (data.time || data.title)) {
+      // Already synced and the details changed — the event has to follow, or
+      // the calendar quietly keeps showing the old time.
+      await updateEvent(user.id, existing.calendarEventId!, details);
+      meeting = await prisma.meeting.update({
+        where: { id },
+        data: { calendarError: null },
+      });
+    }
+  } catch (err) {
+    meeting = await prisma.meeting.update({
+      where: { id },
+      data: { calendarError: explain(err) },
+    });
+  }
+
+  return NextResponse.json(meeting);
 }
 
 export async function DELETE(_req: Request, { params }: Params) {
   const user = await requireUser();
   if (!user) return unauthorized();
   const { id } = await params;
-  // deleteMany, not delete: an id belonging to someone else matches nothing
-  // rather than deleting their row. A zero count therefore means "not yours or
-  // already gone" — answering 204 there would claim a deletion that never
-  // happened, and hide whatever sent the wrong id.
-  const { count } = await prisma.meeting.deleteMany({ where: { id, userId: user.id } });
-  if (!count) return NextResponse.json({ error: 'Not found.' }, { status: 404 });
+
+  const meeting = await prisma.meeting.findFirst({ where: { id, userId: user.id } });
+  if (!meeting) return NextResponse.json({ error: 'Not found.' }, { status: 404 });
+
+  // Best effort: an event left behind on the calendar is worth a warning in the
+  // log, but not worth refusing to delete the meeting here.
+  if (meeting.calendarEventId) {
+    try {
+      await deleteEvent(user.id, meeting.calendarEventId);
+    } catch (err) {
+      console.warn('[meetings] calendar event not removed', err);
+    }
+  }
+
+  await prisma.meeting.delete({ where: { id } });
   return new NextResponse(null, { status: 204 });
 }

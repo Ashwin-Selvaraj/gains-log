@@ -177,3 +177,94 @@ body {
     display: none;
   }
 }
+
+/* ── Onboarding & sign-in ──────────────────────────────────────────────────
+   The ember red is taken from the poster artwork and is deliberately scoped to
+   the entry screens. In-app, green stays the accent: it reads as "done" on the
+   habit stamps, and a red that means "achievement" out here and "problem" in
+   there would be one colour doing two contradictory jobs. */
+:root {
+  --ember: 226 58 46;
+}
+
+/* Cold-start splash. Pure CSS so it paints with the first frame and needs no
+   hydration — a JS-driven splash on a phone opening a cold PWA would appear
+   only after the bundle had parsed, which is exactly the moment it exists to
+   cover. Because the root layout persists across client-side navigation, this
+   mounts once per full page load, which is what "cold start" means here. */
+@keyframes splash-out {
+  0%,
+  55% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0;
+    visibility: hidden;
+  }
+}
+
+@keyframes splash-rise {
+  from {
+    opacity: 0;
+    transform: translateY(14px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+.splash {
+  animation: splash-out 1900ms cubic-bezier(0.4, 0, 0.2, 1) forwards;
+  pointer-events: none;
+}
+
+.splash-item {
+  animation: splash-rise 700ms cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .splash {
+    display: none;
+  }
+  .splash-item {
+    animation: none;
+  }
+}
+
+/* Range input for the measured habits. The native track is hidden so the
+   filled bar behind it shows through; only the thumb is styled here, because
+   a thumb is the one part that cannot be drawn with a sibling element. */
+.measure-range {
+  -webkit-appearance: none;
+  appearance: none;
+  background: transparent;
+  /* 44px of vertical target on a 8px-tall track — the bar is thin to look at,
+     but the area your thumb has to hit is not. */
+  height: 44px;
+  cursor: pointer;
+}
+
+.measure-range::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  height: 26px;
+  width: 26px;
+  border-radius: 9999px;
+  background: rgb(var(--card));
+  border: 2px solid rgb(var(--ink) / 0.55);
+  box-shadow: 0 2px 8px rgb(0 0 0 / 0.28);
+}
+
+.measure-range::-moz-range-thumb {
+  height: 26px;
+  width: 26px;
+  border: 2px solid rgb(var(--ink) / 0.55);
+  border-radius: 9999px;
+  background: rgb(var(--card));
+  box-shadow: 0 2px 8px rgb(0 0 0 / 0.28);
+}
+
+.measure-range:focus-visible::-webkit-slider-thumb {
+  border-color: rgb(var(--accent));
+  box-shadow: 0 0 0 4px rgb(var(--accent) / 0.25);
+}

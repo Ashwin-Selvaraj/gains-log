@@ -19,3 +19,7 @@ next-env.d.ts
 *.tsbuildinfo
 .vercel
 backup-pre-auth.json
+
+# Design sources. The optimised derivatives in public/ are what ships;
+# keeping multi-megabyte originals out of the repo keeps clones and deploys small.
+design/
