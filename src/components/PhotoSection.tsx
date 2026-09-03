@@ -28,6 +28,7 @@ const prepare = (file: File) => downscaleToBlob(file, MAX_EDGE, QUALITY);
 
 export function PhotoSection({ date, photos, onChange, bare = false }: Props) {
   const inputRef = useRef<HTMLInputElement>(null);
+  const cameraRef = useRef<HTMLInputElement>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [viewing, setViewing] = useState<Photo | null>(null);
@@ -79,11 +80,25 @@ export function PhotoSection({ date, photos, onChange, bare = false }: Props) {
         </div>
       )}
 
+      {/* Two inputs, because `capture` is a property of the input, not of the
+          click: one input cannot both open the camera and offer the library.
+          Listing heic/heif explicitly as well as image/* — some Android
+          pickers filter strictly on accept and hide .heic under image/*. */}
       <input
         ref={inputRef}
         type="file"
-        accept="image/*"
+        accept="image/*,.heic,.heif"
         multiple
+        className="sr-only"
+        onChange={(e) => {
+          if (e.target.files?.length) void upload(e.target.files);
+        }}
+      />
+      <input
+        ref={cameraRef}
+        type="file"
+        accept="image/*,.heic,.heif"
+        capture="environment"
         className="sr-only"
         onChange={(e) => {
           if (e.target.files?.length) void upload(e.target.files);
@@ -119,14 +134,24 @@ export function PhotoSection({ date, photos, onChange, bare = false }: Props) {
         </p>
       )}
 
-      <button
-        type="button"
-        className="btn-quiet w-full"
-        disabled={busy}
-        onClick={() => inputRef.current?.click()}
-      >
-        {busy ? 'Uploading…' : '📸 Add photos'}
-      </button>
+      <div className="grid grid-cols-2 gap-2">
+        <button
+          type="button"
+          className="btn-quiet w-full"
+          disabled={busy}
+          onClick={() => cameraRef.current?.click()}
+        >
+          {busy ? 'Uploading…' : '📷 Take photo'}
+        </button>
+        <button
+          type="button"
+          className="btn-quiet w-full"
+          disabled={busy}
+          onClick={() => inputRef.current?.click()}
+        >
+          🖼️ Choose
+        </button>
+      </div>
 
       {viewing && (
         <div

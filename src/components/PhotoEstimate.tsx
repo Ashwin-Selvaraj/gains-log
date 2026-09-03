@@ -43,6 +43,7 @@ type Quota = {
 
 export function PhotoEstimate({ onConfirm }: Props) {
   const inputRef = useRef<HTMLInputElement>(null);
+  const cameraRef = useRef<HTMLInputElement>(null);
   const [photo, setPhoto] = useState<string | null>(null);
   const [estimate, setEstimate] = useState<Estimate | null>(null);
   const [items, setItems] = useState<EstimatedItem[]>([]);
@@ -128,10 +129,22 @@ export function PhotoEstimate({ onConfirm }: Props) {
 
   return (
     <div className="space-y-3">
+      {/* `capture` forced the camera open, so a photo already in the gallery
+          could not be used at all. Two inputs, two buttons — one each. */}
       <input
         ref={inputRef}
         type="file"
-        accept="image/*"
+        accept="image/*,.heic,.heif"
+        className="sr-only"
+        onChange={(e) => {
+          const file = e.target.files?.[0];
+          if (file) void handleFile(file);
+        }}
+      />
+      <input
+        ref={cameraRef}
+        type="file"
+        accept="image/*,.heic,.heif"
         capture="environment"
         className="sr-only"
         onChange={(e) => {
@@ -142,18 +155,28 @@ export function PhotoEstimate({ onConfirm }: Props) {
 
       {!estimate && (
         <>
-          <button
-            type="button"
-            className="btn-quiet w-full"
-            disabled={busy || spent}
-            onClick={() => inputRef.current?.click()}
-          >
-            {busy
-              ? 'Identifying…'
-              : spent
-                ? 'No photo estimates left today'
-                : '📷 Estimate from a photo'}
-          </button>
+          {spent || busy ? (
+            <button type="button" className="btn-quiet w-full" disabled>
+              {busy ? 'Identifying…' : 'No photo estimates left today'}
+            </button>
+          ) : (
+            <div className="grid grid-cols-2 gap-2">
+              <button
+                type="button"
+                className="btn-quiet w-full"
+                onClick={() => cameraRef.current?.click()}
+              >
+                📷 Snap a meal
+              </button>
+              <button
+                type="button"
+                className="btn-quiet w-full"
+                onClick={() => inputRef.current?.click()}
+              >
+                🖼️ Choose
+              </button>
+            </div>
+          )}
 
           {quota && !quota.unlimited && quota.limit !== null && (
             <p className="px-1 text-xs text-muted">

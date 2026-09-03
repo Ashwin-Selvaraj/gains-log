@@ -7,10 +7,27 @@
  * photos are HEIC, and while Safari renders HEIC perfectly well in an <img>,
  * createImageBitmap refuses it.
  *
- * So there are two paths, tried in order. The bitmap path is preferred — it
- * decodes off the main thread and doesn't block the UI on a large photo. The
- * <img> path uses the browser's full image pipeline, which is what actually
- * knows about HEIC, and also applies EXIF orientation for free.
+ * So there are three paths, tried in order:
+ *
+ *   1. createImageBitmap — fastest, decodes off the main thread, and handles
+ *      everything a browser natively supports.
+ *   2. an <img> element — the browser's full image pipeline, which on Safari
+ *      does know HEIC, and which applies EXIF orientation for free.
+ *   3. a WASM HEVC decoder, loaded on demand.
+ *
+ * The third exists because the first two both fail for HEIC on Chrome and
+ * Android — only Safari decodes it natively.
+ *
+ * Converting server-side was the alternative, and sharp can in fact decode
+ * HEIC. It was rejected for two reasons: it would mean uploading the untouched
+ * 3–8 MB original over mobile data purely to shrink it, when the whole point of
+ * downscaling here is to avoid that; and sharp's codec set comes from a
+ * platform-specific prebuilt binary, so "it decodes on my Mac" says nothing
+ * about the arm64 build on the server. Doing it in the browser is the same
+ * everywhere.
+ *
+ * The decoder is ~3 MB, so it is dynamically imported and only ever fetched
+ * once the cheap paths have already failed on a real file.
  */
 
 type Decoded = {
@@ -74,19 +91,43 @@ async function viaImgElement(file: File): Promise<Decoded | null> {
   }
 }
 
+/**
+ * Last resort: decode HEIC/HEIF in WASM.
+ *
+ * Imported dynamically so the decoder is not in the main bundle — it is large,
+ * and most photos never need it. `isHeic` sniffs the file's magic bytes rather
+ * than trusting the extension, so a mislabelled file is still handled and a
+ * genuinely corrupt JPEG doesn't get pushed through a HEIC decoder.
+ */
+async function viaHeicDecoder(file: File): Promise<Decoded | null> {
+  try {
+    const { isHeic, heicTo } = await import('heic-to/next');
+    if (!(await isHeic(file))) return null;
+
+    const jpeg = await heicTo({ blob: file, type: 'image/jpeg', quality: 0.92 });
+    const converted = new File([jpeg], 'converted.jpg', { type: 'image/jpeg' });
+    // Back through the normal paths — it is an ordinary JPEG now.
+    return (await viaImageBitmap(converted)) ?? (await viaImgElement(converted));
+  } catch {
+    return null;
+  }
+}
+
 export class ImageDecodeError extends Error {
   constructor(fileName: string) {
     super(
-      `Couldn't read ${fileName || 'that image'}. If it came from an iPhone it may be ` +
-        'HEIC — open Settings → Camera → Formats and choose "Most Compatible", or ' +
-        'share the photo as JPEG and try again.',
+      `Couldn't read ${fileName || 'that image'}. It may be damaged, or in a format ` +
+        'this browser cannot open. Try another photo, or save it as a JPEG first.',
     );
     this.name = 'ImageDecodeError';
   }
 }
 
 async function decode(file: File): Promise<Decoded> {
-  const decoded = (await viaImageBitmap(file)) ?? (await viaImgElement(file));
+  const decoded =
+    (await viaImageBitmap(file)) ??
+    (await viaImgElement(file)) ??
+    (await viaHeicDecoder(file));
   if (!decoded) throw new ImageDecodeError(file.name);
   return decoded;
 }
