@@ -48,6 +48,8 @@ export function TodaySkeleton() {
       <SkeletonBlock className="h-72" />
       {/* Learning */}
       <SkeletonBlock className="h-32" />
+      {/* Practices */}
+      <SkeletonBlock className="h-40" />
       {/* Meetings and Photos, collapsed to a header row each. */}
       <SkeletonBlock className="h-14" />
       <SkeletonBlock className="h-14" />

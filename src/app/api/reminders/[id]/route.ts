@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { requireUser, unauthorized } from '@/lib/auth';
+import { logDeletion } from '@/lib/audit';
 
 export const dynamic = 'force-dynamic';
 
@@ -49,7 +50,10 @@ export async function DELETE(_req: Request, { params }: Params) {
   if (!user) return unauthorized();
   const { id } = await params;
 
-  const { count } = await prisma.reminder.deleteMany({ where: { id, userId: user.id } });
-  if (!count) return NextResponse.json({ error: 'Not found.' }, { status: 404 });
+  const reminder = await prisma.reminder.findFirst({ where: { id, userId: user.id } });
+  if (!reminder) return NextResponse.json({ error: 'Not found.' }, { status: 404 });
+
+  await prisma.reminder.delete({ where: { id } });
+  logDeletion(user.email, 'reminder', `${reminder.time} "${reminder.label}" (id ${id})`);
   return new NextResponse(null, { status: 204 });
 }

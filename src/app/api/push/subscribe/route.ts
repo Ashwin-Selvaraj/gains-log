@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { pushConfigured } from '@/lib/push';
 import { requireUser, unauthorized } from '@/lib/auth';
+import { logDeletion } from '@/lib/audit';
 
 export const dynamic = 'force-dynamic';
 
@@ -51,7 +52,10 @@ export async function DELETE(req: Request) {
   if (!user) return unauthorized();
   const endpoint = new URL(req.url).searchParams.get('endpoint');
   if (endpoint) {
-    await prisma.pushSubscription.deleteMany({ where: { endpoint, userId: user.id } });
+    const { count } = await prisma.pushSubscription.deleteMany({
+      where: { endpoint, userId: user.id },
+    });
+    if (count) logDeletion(user.email, 'push subscription', endpoint.slice(0, 60) + '…');
   }
   return new NextResponse(null, { status: 204 });
 }

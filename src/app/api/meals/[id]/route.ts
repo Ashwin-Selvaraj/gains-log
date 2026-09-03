@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { requireUser, unauthorized } from '@/lib/auth';
 import { deletePhoto } from '@/lib/storage';
+import { logDeletion } from '@/lib/audit';
 import { MEAL_SLOT_KEYS, type MealSlot } from '@/lib/goals';
 
 export const dynamic = 'force-dynamic';
@@ -41,6 +42,11 @@ export async function DELETE(_req: Request, { params }: Params) {
   if (!user) return unauthorized();
   const { id } = await params;
 
+  // findFirst scoped by owner, so another account's id simply does not
+  // resolve — and it's what lets the delete below log what it actually removed.
+  const meal = await prisma.mealEntry.findFirst({ where: { id, userId: user.id } });
+  if (!meal) return NextResponse.json({ error: 'Not found.' }, { status: 404 });
+
   // Photo.mealId has no foreign key — it's a plain column, not a relation —
   // so deleting the meal would never cascade to it. Without this, every
   // AI-estimated meal that gets removed leaves its photo behind in R2 forever.
@@ -59,11 +65,7 @@ export async function DELETE(_req: Request, { params }: Params) {
     await prisma.photo.deleteMany({ where: { id: { in: photos.map((p) => p.id) } } });
   }
 
-  // deleteMany, not delete: an id belonging to someone else matches nothing
-  // rather than deleting their row. A zero count therefore means "not yours or
-  // already gone" — answering 204 there would claim a deletion that never
-  // happened, and hide whatever sent the wrong id.
-  const { count } = await prisma.mealEntry.deleteMany({ where: { id, userId: user.id } });
-  if (!count) return NextResponse.json({ error: 'Not found.' }, { status: 404 });
+  await prisma.mealEntry.delete({ where: { id } });
+  logDeletion(user.email, 'meal', `"${meal.name}" (${meal.calories ?? '?'} kcal, id ${id})`);
   return new NextResponse(null, { status: 204 });
 }

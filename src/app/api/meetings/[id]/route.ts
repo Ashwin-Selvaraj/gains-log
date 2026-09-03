@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { requireUser, unauthorized } from '@/lib/auth';
 import { readSettings } from '@/lib/settings';
+import { logDeletion } from '@/lib/audit';
 import { CalendarError, createEvent, deleteEvent, updateEvent } from '@/lib/calendar';
 
 export const dynamic = 'force-dynamic';
@@ -109,5 +110,6 @@ export async function DELETE(_req: Request, { params }: Params) {
   }
 
   await prisma.meeting.delete({ where: { id } });
+  logDeletion(user.email, 'meeting', `"${meeting.title}" at ${meeting.time} (id ${id})`);
   return new NextResponse(null, { status: 204 });
 }

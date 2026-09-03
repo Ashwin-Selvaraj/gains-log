@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { deletePhoto } from '@/lib/storage';
 import { requireUser, unauthorized } from '@/lib/auth';
+import { logDeletion } from '@/lib/audit';
 
 export const dynamic = 'force-dynamic';
 
@@ -26,6 +27,7 @@ export async function DELETE(_req: Request, { params }: Params) {
 
   // Ownership is already established above, so a plain delete is safe here.
   await prisma.photo.delete({ where: { id } });
+  logDeletion(user.email, 'photo', `${photo.kind} ${photo.key} (id ${id})`);
   return new NextResponse(null, { status: 204 });
 }
 

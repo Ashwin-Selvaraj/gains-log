@@ -433,6 +433,8 @@ model User {
   notifications NotificationLog[]
   aiUsage       AiUsage[]
   reminders     Reminder[]
+  habits        Habit[]
+  habitLogs     HabitLog[]
 }
 
 model Account {
@@ -499,6 +501,61 @@ model Reminder {
   /// and it also makes the notification log's per-kind key unambiguous.
   @@unique([userId, time])
   @@index([userId])
+}
+
+/// A user-defined daily practice — "Post on Twitter", "Talk to someone",
+/// anything that isn't one of the four built-in habits on DailyEntry. Those
+/// are fixed columns because the app's targets and report are built around
+/// exactly those four; this is the open-ended list for whatever else someone
+/// wants to check off and track a streak on.
+model Habit {
+  id     String @id @default(cuid())
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  name String
+  /// A single emoji, shown next to the name. Defaults to a plain checkmark
+  /// rather than forcing a picker before the first save.
+  icon String @default("🔥")
+
+  /// Hidden from Today without deleting its history — the streak and total
+  /// picking back up if it's ever unarchived.
+  archived Boolean @default(false)
+  /// Manual ordering on Today; new habits go to the end.
+  position Int     @default(0)
+
+  /// Date key ("YYYY-MM-DD") supplied by the client at creation, in *their*
+  /// timezone — anchors the streak/duration math, so a habit started three
+  /// days ago cannot claim a thirty-day streak. Deliberately not derived from
+  /// createdAt: this server runs in Singapore and its callers are in India, so
+  /// converting a timestamp to a date with the server's own clock can land on
+  /// the wrong day for hours around midnight IST — the same class of bug the
+  /// reminder scheduler already had to route around (see src/lib/reminders.ts).
+  startedOn String
+  createdAt DateTime   @default(now())
+  logs      HabitLog[]
+
+  @@index([userId, archived])
+}
+
+/// One row per habit per day it was ticked. Streaks are computed from these
+/// on read, never stored — deleting a mis-tapped tick self-corrects the
+/// streak instead of leaving a cached number wrong.
+model HabitLog {
+  id      String @id @default(cuid())
+  habitId String
+  habit   Habit  @relation(fields: [habitId], references: [id], onDelete: Cascade)
+  /// Denormalised, like WorkoutSet.userId — this table is queried directly by
+  /// owner, and a join that was ever forgotten would return someone else's rows.
+  userId  String
+  user    User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  date String
+
+  createdAt DateTime @default(now())
+
+  @@unique([habitId, date])
+  @@index([userId, date])
 }
 
 /// One row per person per day, counting AI photo estimates.

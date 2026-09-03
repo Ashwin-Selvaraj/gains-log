@@ -5,6 +5,7 @@ import Link from 'next/link';
 import { MEAL_SLOTS, MEASURES, slotForHour } from '@/lib/goals';
 import { MeasureSlider } from '@/components/MeasureSlider';
 import { Section } from '@/components/Section';
+import { PracticesSection } from '@/components/PracticesSection';
 import { mutate, OfflineQueuedError } from '@/lib/sync';
 import type {
   CarriedExercise,
@@ -535,6 +536,11 @@ export function DayEditor({
           />
         </div>
       </Section>
+
+      {/* ── Practices ──────────────────────────────────────────────────────
+          Open-ended, self-contained, and fetched independently — see the
+          component for why it doesn't route through this component's state. */}
+      <PracticesSection />
 
       {/* ── Occasional ─────────────────────────────────────────────────────
           Meetings and photos are not part of most days, so they start folded

@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { requireUser, unauthorized } from '@/lib/auth';
+import { logDeletion } from '@/lib/audit';
 
 export const dynamic = 'force-dynamic';
 
@@ -10,13 +11,13 @@ export async function DELETE(_req: Request, { params }: Params) {
   const user = await requireUser();
   if (!user) return unauthorized();
   const { id } = await params;
-  // deleteMany with the owner in the filter: delete({ where: { id } }) would
-  // happily remove another user's row if an id ever leaked.
-  // deleteMany, not delete: an id belonging to someone else matches nothing
-  // rather than deleting their row. A zero count therefore means "not yours or
-  // already gone" — answering 204 there would claim a deletion that never
-  // happened, and hide whatever sent the wrong id.
-  const { count } = await prisma.carriedExercise.deleteMany({ where: { id, userId: user.id } });
-  if (!count) return NextResponse.json({ error: 'Not found.' }, { status: 404 });
+  // findFirst with the owner in the filter: delete({ where: { id } }) would
+  // happily remove another user's row if an id ever leaked, and this is also
+  // what lets the log line below say what was actually removed.
+  const carried = await prisma.carriedExercise.findFirst({ where: { id, userId: user.id } });
+  if (!carried) return NextResponse.json({ error: 'Not found.' }, { status: 404 });
+
+  await prisma.carriedExercise.delete({ where: { id } });
+  logDeletion(user.email, 'carried exercise', `${carried.name} (id ${id})`);
   return new NextResponse(null, { status: 204 });
 }

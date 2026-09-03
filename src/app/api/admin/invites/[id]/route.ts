@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { requireAdmin, forbidden } from '@/lib/auth';
+import { logDeletion } from '@/lib/audit';
 
 export const dynamic = 'force-dynamic';
 
@@ -35,6 +36,7 @@ export async function DELETE(_req: Request, { params }: Params) {
   }
 
   await prisma.allowedEmail.delete({ where: { id } });
+  logDeletion(admin.email, 'invite', `access revoked for ${invite.email}`);
 
   // Their data and any session already in flight survive. With JWT sessions
   // there is no server-side session to revoke, so this stops the next sign-in

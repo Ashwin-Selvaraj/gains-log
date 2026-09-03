@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { withMacros } from '@/app/api/presets/route';
 import { requireUser, unauthorized } from '@/lib/auth';
+import { logDeletion } from '@/lib/audit';
 
 export const dynamic = 'force-dynamic';
 
@@ -61,11 +62,13 @@ export async function DELETE(_req: Request, { params }: Params) {
   const user = await requireUser();
   if (!user) return unauthorized();
   const { id } = await params;
-  // deleteMany, not delete: an id belonging to someone else matches nothing
-  // rather than deleting their row. A zero count therefore means "not yours or
-  // already gone" — answering 204 there would claim a deletion that never
-  // happened, and hide whatever sent the wrong id.
-  const { count } = await prisma.mealPreset.deleteMany({ where: { id, userId: user.id } });
-  if (!count) return NextResponse.json({ error: 'Not found.' }, { status: 404 });
+  // findFirst, not a blind delete: an id belonging to someone else simply
+  // resolves to nothing, and this is what lets the log line say what was
+  // actually removed rather than just an id.
+  const preset = await prisma.mealPreset.findFirst({ where: { id, userId: user.id } });
+  if (!preset) return NextResponse.json({ error: 'Not found.' }, { status: 404 });
+
+  await prisma.mealPreset.delete({ where: { id } });
+  logDeletion(user.email, 'preset', `"${preset.name}" (id ${id})`);
   return new NextResponse(null, { status: 204 });
 }

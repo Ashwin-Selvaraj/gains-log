@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { requireUser, unauthorized } from '@/lib/auth';
+import { logDeletion } from '@/lib/audit';
 
 export const dynamic = 'force-dynamic';
 
@@ -72,12 +73,14 @@ export async function DELETE(_req: Request, { params }: Params) {
   const user = await requireUser();
   if (!user) return unauthorized();
   const { id } = await params;
-  const removed = await prisma.food.deleteMany({ where: { id, userId: user.id } });
-  if (removed.count === 0) {
+  const food = await prisma.food.findFirst({ where: { id, userId: user.id } });
+  if (!food) {
     return NextResponse.json(
       { error: 'Not your food, or it is a shared one.' },
       { status: 403 },
     );
   }
+  await prisma.food.delete({ where: { id } });
+  logDeletion(user.email, 'food', `${food.name} (id ${id})`);
   return new NextResponse(null, { status: 204 });
 }
