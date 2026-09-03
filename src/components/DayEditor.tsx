@@ -440,6 +440,7 @@ export function DayEditor({
         {showTargets && settings && <TargetsBar totals={totals} settings={settings} />}
 
         <MealsSection
+          date={date}
           meals={entry.meals}
           presets={presets}
           totals={totals}
@@ -750,6 +751,7 @@ function MeetingsSection({
 }
 
 function MealsSection({
+  date,
   meals,
   presets,
   totals,
@@ -758,6 +760,8 @@ function MealsSection({
   onMoveSlot,
   bare = false,
 }: {
+  /** Which day this is — PhotoEstimate needs it to upload the meal photo. */
+  date: string;
   meals: Meal[];
   presets: Preset[];
   totals: Macros;
@@ -992,7 +996,8 @@ function MealsSection({
       )}
 
       <PhotoEstimate
-        onConfirm={({ name: mealName, macros, photoUrl }) =>
+        date={date}
+        onConfirm={({ name: mealName, macros, photoUrl, photoId }) =>
           onAdd(
             {
               name: mealName,
@@ -1002,6 +1007,7 @@ function MealsSection({
               fat: macros.fat,
               fiber: macros.fiber,
               photoUrl,
+              photoId,
               source: 'photo-estimate',
               slot: addSlot,
             },

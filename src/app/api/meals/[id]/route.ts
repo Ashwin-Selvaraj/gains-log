@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { requireUser, unauthorized } from '@/lib/auth';
+import { deletePhoto } from '@/lib/storage';
 import { MEAL_SLOT_KEYS, type MealSlot } from '@/lib/goals';
 
 export const dynamic = 'force-dynamic';
@@ -39,6 +40,25 @@ export async function DELETE(_req: Request, { params }: Params) {
   const user = await requireUser();
   if (!user) return unauthorized();
   const { id } = await params;
+
+  // Photo.mealId has no foreign key — it's a plain column, not a relation —
+  // so deleting the meal would never cascade to it. Without this, every
+  // AI-estimated meal that gets removed leaves its photo behind in R2 forever.
+  const photos = await prisma.photo.findMany({
+    where: { mealId: id, userId: user.id },
+    select: { id: true, key: true },
+  });
+  for (const photo of photos) {
+    try {
+      await deletePhoto(photo.key);
+    } catch (err) {
+      console.warn('[meals] bucket delete failed, removing row anyway', err);
+    }
+  }
+  if (photos.length) {
+    await prisma.photo.deleteMany({ where: { id: { in: photos.map((p) => p.id) } } });
+  }
+
   // deleteMany, not delete: an id belonging to someone else matches nothing
   // rather than deleting their row. A zero count therefore means "not yours or
   // already gone" — answering 204 there would claim a deletion that never

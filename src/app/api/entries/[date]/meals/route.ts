@@ -138,5 +138,17 @@ export async function POST(req: Request, { params }: Params) {
     },
   });
 
+  // photoId names an R2-backed Photo row already uploaded via POST /api/photos
+  // (kind "meal") before this request was made — see PhotoEstimate.save(). The
+  // meal's photoUrl above is enough to render it; this backlink is what lets
+  // DELETE /api/meals/[id] find and clean up the R2 object rather than leaving
+  // it orphaned in the bucket.
+  if (typeof body.photoId === 'string' && body.photoId) {
+    await prisma.photo.updateMany({
+      where: { id: body.photoId, userId: user.id, mealId: null },
+      data: { mealId: meal.id },
+    });
+  }
+
   return NextResponse.json(meal, { status: 201 });
 }

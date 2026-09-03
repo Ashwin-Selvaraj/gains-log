@@ -95,10 +95,48 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
       return await isAllowed(user.email);
     },
 
-    async jwt({ token, user, trigger }) {
+    async jwt({ token, user, account, trigger }) {
       // `user` is only present on the sign-in pass; afterwards the id rides in
       // the token, which is what avoids a per-request database lookup.
       if (user?.id) token.uid = user.id;
+
+      /**
+       * Re-persists this sign-in's tokens onto the existing Account row.
+       *
+       * `account` here is fresh from Google for *this* OAuth round — it has
+       * whatever scope and tokens were just granted. But by the time this
+       * callback runs, the adapter has already decided how to handle the
+       * account, and for anyone who already has a linked Google account (i.e.
+       * everyone, after their first sign-in) its answer is "nothing to do":
+       * PrismaAdapter only calls `linkAccount` on a brand-new link, never on a
+       * repeat sign-in with an already-linked provider. So the "Connect Google
+       * Calendar" flow completes, Google issues a token, and the adapter
+       * silently discards it — the Account row still shows the original
+       * sign-in scope, no refresh_token, calendarConnected stays false, and
+       * nothing in the UI or the logs says why.
+       *
+       * `account` is only present on this one pass, which keeps the extra
+       * write off the hot path — every other request just decodes the JWT.
+       */
+      if (account?.provider === 'google' && account.providerAccountId) {
+        try {
+          await prisma.account.updateMany({
+            where: { provider: 'google', providerAccountId: account.providerAccountId },
+            data: {
+              access_token: account.access_token,
+              refresh_token: account.refresh_token ?? undefined,
+              expires_at: account.expires_at,
+              scope: account.scope,
+              token_type: account.token_type,
+              id_token: account.id_token,
+            },
+          });
+        } catch (err) {
+          // Must not fail the sign-in over this — worst case, Calendar has to
+          // be reconnected, which is recoverable from the profile screen.
+          console.error('[auth] could not persist refreshed Google tokens:', err);
+        }
+      }
 
       // Admin is read on sign-in and whenever the session is explicitly
       // updated, not on every request — the whole point of the JWT strategy is

@@ -5,10 +5,14 @@ import { downscaleToDataUrl } from '@/lib/image';
 import type { EstimatedItem, Macros, PhotoEstimate as Estimate } from '@/lib/types';
 
 type Props = {
+  /** Which day's entry this is being logged against — needed to upload the photo. */
+  date: string;
   onConfirm: (meal: {
     name: string;
     macros: Macros;
     photoUrl: string | null;
+    /** The R2-backed Photo row's id, so the meal and the photo can be linked. */
+    photoId?: string;
   }) => void;
 };
 
@@ -41,7 +45,7 @@ type Quota = {
   unlimited: boolean;
 };
 
-export function PhotoEstimate({ onConfirm }: Props) {
+export function PhotoEstimate({ date, onConfirm }: Props) {
   const inputRef = useRef<HTMLInputElement>(null);
   const cameraRef = useRef<HTMLInputElement>(null);
   const [photo, setPhoto] = useState<string | null>(null);
@@ -49,7 +53,10 @@ export function PhotoEstimate({ onConfirm }: Props) {
   const [items, setItems] = useState<EstimatedItem[]>([]);
   const [name, setName] = useState('');
   const [busy, setBusy] = useState(false);
+  const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  /** Separate from `error`: the meal still saved, just without its photo. */
+  const [warning, setWarning] = useState<string | null>(null);
   const [quota, setQuota] = useState<Quota | null>(null);
 
   function reset() {
@@ -73,10 +80,11 @@ export function PhotoEstimate({ onConfirm }: Props) {
   async function handleFile(file: File) {
     setBusy(true);
     setError(null);
+    setWarning(null);
     try {
       const dataUrl = await downscale(file);
-      // The stored copy is a thumbnail — a full 1024px data URL per meal would
-      // bloat the database for something only ever shown 80px wide.
+      // Kept as a 256px thumbnail — that's all a meal-list icon needs, and it
+      // is what gets uploaded to R2 on save() rather than a full 1024px image.
       setPhoto(await downscale(file, 256));
 
       const res = await fetch('/api/estimate', {
@@ -126,6 +134,58 @@ export function PhotoEstimate({ onConfirm }: Props) {
   const totals = sum(items);
   /** Out of allowance. Admins are never capped, so `remaining` is null for them. */
   const spent = quota !== null && !quota.unlimited && (quota.remaining ?? 1) <= 0;
+
+  /**
+   * Uploads the thumbnail to R2 before handing the meal off, so the photo
+   * lives beside every other photo in the bucket rather than as a base64
+   * string on the row. The 256px thumbnail already held in `photo` is exactly
+   * what a meal-list icon needs — no reason to re-derive anything from the
+   * original file, which by this point isn't kept around.
+   *
+   * Storage is best-effort here: a meal you just spent one of five daily AI
+   * calls identifying must not be lost because R2 is unreachable or
+   * misconfigured. On failure the meal saves with no photo, and the reason
+   * is surfaced rather than swallowed.
+   */
+  async function save() {
+    setSaving(true);
+    setError(null);
+    setWarning(null);
+    try {
+      let photoUrl: string | null = null;
+      let photoId: string | undefined;
+      // Set after reset() below, which clears everything else — the meal
+      // saves either way, so this is a note about the photo, not a failure of
+      // the save itself.
+      let warn: string | null = null;
+
+      if (photo) {
+        try {
+          const blob = await (await fetch(photo)).blob();
+          const form = new FormData();
+          form.append('file', new File([blob], 'meal.jpg', { type: 'image/jpeg' }));
+          form.append('date', date);
+          form.append('kind', 'meal');
+          const res = await fetch('/api/photos', { method: 'POST', body: form });
+          const json = await res.json();
+          if (res.ok) {
+            photoUrl = json.url;
+            photoId = json.id;
+          } else {
+            warn = `Saved without the photo — ${json.error ?? 'photo storage failed'}.`;
+          }
+        } catch {
+          warn = 'Saved without the photo — could not reach photo storage.';
+        }
+      }
+
+      onConfirm({ name: name.trim(), macros: totals, photoUrl, photoId });
+      reset();
+      if (warn) setWarning(warn);
+    } finally {
+      setSaving(false);
+    }
+  }
 
   return (
     <div className="space-y-3">
@@ -198,6 +258,12 @@ export function PhotoEstimate({ onConfirm }: Props) {
       {error && (
         <p className="rounded-xl bg-red-500/10 px-3 py-2 text-sm text-red-600 dark:text-red-400">
           {error}
+        </p>
+      )}
+
+      {warning && (
+        <p className="rounded-xl bg-amber-500/10 px-3 py-2 text-sm text-amber-700 dark:text-amber-400">
+          {warning}
         </p>
       )}
 
@@ -288,15 +354,12 @@ export function PhotoEstimate({ onConfirm }: Props) {
             <button
               type="button"
               className="btn-primary flex-1"
-              disabled={!name.trim() || items.length === 0}
-              onClick={() => {
-                onConfirm({ name: name.trim(), macros: totals, photoUrl: photo });
-                reset();
-              }}
+              disabled={!name.trim() || items.length === 0 || saving}
+              onClick={() => void save()}
             >
-              Save meal
+              {saving ? 'Saving…' : 'Save meal'}
             </button>
-            <button type="button" className="btn-quiet" onClick={reset}>
+            <button type="button" className="btn-quiet" onClick={reset} disabled={saving}>
               Discard
             </button>
           </div>
