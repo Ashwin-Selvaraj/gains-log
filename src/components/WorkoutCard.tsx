@@ -10,6 +10,7 @@ import type {
   WorkoutSet,
 } from '@/lib/types';
 import { CarryForward } from '@/components/CarryForward';
+import { ExercisePicker } from '@/components/ExercisePicker';
 import { formatDay } from '@/lib/date';
 
 type Props = {
@@ -413,15 +414,13 @@ export function WorkoutCard({
           setAdHoc((prev) => (prev.includes(name) ? prev : [...prev, name]));
           setOpen(name);
         }}
-        known={[...byExercise.keys()]}
       />
     </section>
   );
 }
 
 /** Lets you log something the plan didn't ask for without editing the plan. */
-function AddExtra({ onAdd, known }: { onAdd: (name: string) => void; known: string[] }) {
-  const [name, setName] = useState('');
+function AddExtra({ onAdd }: { onAdd: (name: string) => void }) {
   const [open, setOpen] = useState(false);
 
   if (!open) {
@@ -433,34 +432,12 @@ function AddExtra({ onAdd, known }: { onAdd: (name: string) => void; known: stri
   }
 
   return (
-    <form
-      className="mt-2 flex gap-2"
-      onSubmit={(e) => {
-        e.preventDefault();
-        const trimmed = name.trim();
-        if (!trimmed) return;
-        onAdd(trimmed);
-        setName('');
+    <ExercisePicker
+      onCancel={() => setOpen(false)}
+      onPick={(name) => {
+        onAdd(name);
         setOpen(false);
       }}
-    >
-      <input
-        className="field"
-        placeholder="Exercise name"
-        aria-label="Exercise name"
-        value={name}
-        onChange={(e) => setName(e.target.value)}
-        list="known-exercises"
-        autoFocus
-      />
-      <datalist id="known-exercises">
-        {known.map((k) => (
-          <option key={k} value={k} />
-        ))}
-      </datalist>
-      <button type="submit" className="btn-quiet shrink-0" disabled={!name.trim()}>
-        Add
-      </button>
-    </form>
+    />
   );
 }

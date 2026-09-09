@@ -435,6 +435,7 @@ model User {
   reminders     Reminder[]
   habits        Habit[]
   habitLogs     HabitLog[]
+  exercises     Exercise[]
 }
 
 model Account {
@@ -508,6 +509,42 @@ model Reminder {
 /// are fixed columns because the app's targets and report are built around
 /// exactly those four; this is the open-ended list for whatever else someone
 /// wants to check off and track a streak on.
+/// The catalogue of exercises you can log, and what each one trains.
+///
+/// Logging used to be free text with a datalist of whatever you'd already
+/// logged that day, so "Bench press", "bench press" and "Benchpress" became
+/// three different lifts with three separate PR histories — the exact problem
+/// exerciseKey() normalisation was meant to prevent but couldn't, because
+/// nothing offered the canonical spelling in the first place.
+///
+/// Same shared/personal split as Food: rows with a null userId are the seeded
+/// catalogue everyone reads, and anything someone adds themselves is theirs
+/// alone. muscleGroup is what makes "I'm doing chest today instead" possible.
+model Exercise {
+  id     String  @id @default(cuid())
+  /// Null for the shared seeded catalogue; set for a user's own addition.
+  userId String?
+  user   User?   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  name        String
+  /// Normalised for lookup — the same key WorkoutSet.exerciseKey stores, so a
+  /// logged set can be traced back to its catalogue entry.
+  nameKey     String
+  /// Comma-separated lowercase alternates ("bp,barbell bench") so search finds
+  /// a lift by whatever the person actually calls it.
+  aliases     String @default("")
+  /// One of MUSCLE_GROUPS in src/lib/exercises.ts.
+  muscleGroup String @default("other")
+
+  createdAt DateTime @default(now())
+
+  /// Scoped to the owner, so a personal variant can coexist with the shared one.
+  @@unique([userId, nameKey])
+  @@index([nameKey])
+  @@index([muscleGroup])
+  @@index([userId])
+}
+
 model Habit {
   id     String @id @default(cuid())
   userId String

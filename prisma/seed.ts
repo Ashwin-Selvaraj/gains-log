@@ -11,6 +11,7 @@ import { PrismaClient } from '@prisma/client';
 // Extension required: node --experimental-strip-types resolves this at
 // runtime and will not guess it. See allowImportingTsExtensions in tsconfig.
 import { FOODS } from './foods.ts';
+import { EXERCISES } from './exercises.ts';
 
 const foodKey = (name: string) => name.trim().toLowerCase().replace(/\s+/g, ' ');
 
@@ -49,6 +50,34 @@ async function main() {
   }
 
   console.log(`foods: ${created} created, ${updated} updated (shared across all accounts)`);
+
+  // --- exercises ----------------------------------------------------------
+  // Same shared-row treatment as foods: userId null, matched with an ordinary
+  // filter because a compound unique can't be addressed with a null userId.
+  let exCreated = 0;
+  let exUpdated = 0;
+
+  for (const [name, muscleGroup, aliases] of EXERCISES) {
+    const nameKey = name.trim().toLowerCase().replace(/\s+/g, ' ');
+    const values = { name, muscleGroup, aliases };
+
+    const existing = await prisma.exercise.findFirst({
+      where: { userId: null, nameKey },
+      select: { id: true },
+    });
+
+    if (existing) {
+      await prisma.exercise.update({ where: { id: existing.id }, data: values });
+      exUpdated++;
+    } else {
+      await prisma.exercise.create({ data: { ...values, nameKey } });
+      exCreated++;
+    }
+  }
+
+  console.log(
+    `exercises: ${exCreated} created, ${exUpdated} updated (shared across all accounts)`,
+  );
 }
 
 main()
