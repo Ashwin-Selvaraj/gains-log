@@ -1,5 +1,7 @@
 'use client';
 
+import { useState } from 'react';
+
 /**
  * A habit with an amount, not just a tick.
  *
@@ -10,12 +12,25 @@
  * figure you look up — dragging is quicker than typing, and the target marker
  * gives the number a meaning without needing a second line of text.
  *
- * The number field stays available beside it: a slider is fast but imprecise,
- * and someone who tracks intake exactly should not be forced to nudge a thumb.
+ * Water additionally takes `quickAdd`, and sleep deliberately doesn't: they
+ * are measured at different moments. Sleep is one number you know on waking,
+ * so setting it once is the whole interaction. Water accumulates all day, and
+ * asking someone at bedtime how much they drank since breakfast is asking them
+ * to remember something they never tracked — which is how water logging
+ * quietly stops after a week. A glass finished is a tap, in the moment.
  */
 /** Trims the trailing zero from quarter steps: 2.50 -> 2.5, 2.25 stays. */
 function formatAmount(n: number): string {
   return n % 1 === 0 ? String(n) : n.toFixed(2).replace(/0$/, '');
+}
+
+/**
+ * "+500 ml" rather than "+0.5 L" — the units people actually pour in. Above a
+ * litre the bigger unit is the natural one, so 1 stays "+1 L".
+ */
+function quickAddLabel(amount: number, unit: string): string {
+  if (unit === 'L' && amount < 1) return `+${Math.round(amount * 1000)} ml`;
+  return `+${formatAmount(amount)} ${unit}`;
 }
 
 export function MeasureSlider({
@@ -26,6 +41,7 @@ export function MeasureSlider({
   max,
   step,
   target,
+  quickAdd,
   onChange,
 }: {
   icon: string;
@@ -36,14 +52,32 @@ export function MeasureSlider({
   step: number;
   /** Marked on the track, and the point at which the fill reads as "met". */
   target?: number;
+  /** Amounts offered as one-tap increments, for things logged as they happen. */
+  quickAdd?: readonly number[];
   onChange: (value: number | null) => void;
 }) {
+  /**
+   * The value before the last quick-add, so it can be put back exactly.
+   * `undefined` means there's nothing to undo; `null` is a real previous
+   * state (nothing logged yet) and must be restorable, or the first mis-tap
+   * of the day would leave a 0.25 that can't be cleared without the slider.
+   */
+  const [previous, setPrevious] = useState<number | null | undefined>(undefined);
+
   // Coerced rather than trusted. The component owns how it formats this, and
   // a non-number arriving here should degrade to 0, not throw inside render and
   // take the whole page down with it.
   const current = typeof value === 'number' && Number.isFinite(value) ? value : 0;
   const pct = Math.min(100, (current / max) * 100);
   const met = target != null && current >= target;
+
+  function add(amount: number) {
+    setPrevious(value);
+    // Rounded because repeated floating-point addition drifts, and capped at
+    // the slider's own ceiling so the two controls can't disagree.
+    const next = Math.min(max, Math.round((current + amount) * 100) / 100);
+    onChange(next);
+  }
 
   return (
     <div>
@@ -101,6 +135,39 @@ export function MeasureSlider({
           }}
         />
       </div>
+
+      {/* One tap per glass, in the moment — the slider stays above for
+          correcting a total rather than being the only way in. */}
+      {quickAdd && quickAdd.length > 0 && (
+        <div className="mt-1 flex flex-wrap items-center gap-1.5">
+          {quickAdd.map((amount) => (
+            <button
+              key={amount}
+              type="button"
+              onClick={() => add(amount)}
+              disabled={current >= max}
+              className="min-h-[36px] rounded-xl border border-line bg-surface px-3 text-sm
+                         font-medium tabular-nums text-ink transition active:scale-95
+                         disabled:opacity-40"
+            >
+              {quickAddLabel(amount, unit)}
+            </button>
+          ))}
+
+          {previous !== undefined && (
+            <button
+              type="button"
+              onClick={() => {
+                onChange(previous);
+                setPrevious(undefined);
+              }}
+              className="min-h-[36px] px-2 text-sm text-muted underline"
+            >
+              undo
+            </button>
+          )}
+        </div>
+      )}
     </div>
   );
 }

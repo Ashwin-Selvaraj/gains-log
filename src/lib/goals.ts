@@ -41,8 +41,27 @@ export type HabitKey = (typeof HABITS)[number]['key'];
 
 /** Sensible ceilings and defaults for the measured habits. */
 export const MEASURES = {
-  water: { max: 6, step: 0.25, target: 3, unit: 'L', icon: '💧', label: 'Water' },
-  sleep: { max: 12, step: 0.25, target: 7.5, unit: 'hrs', icon: '😴', label: 'Sleep' },
+  /**
+   * quickAdd is the primary way in: a glass or bottle finished is one tap, at
+   * the moment it happens. Asking at bedtime how much you drank since morning
+   * is asking you to recall something you never tracked.
+   */
+  water: {
+    max: 6,
+    step: 0.25,
+    target: 3,
+    unit: 'L',
+    icon: '💧',
+    label: 'Water',
+    quickAdd: [0.25, 0.5, 1],
+  },
+  /**
+   * No quickAdd: sleep isn't accumulated through the day, it's one number you
+   * know on waking. "Last night" rather than "Sleep" because a day's entry
+   * should say which night it means — logged in the morning, about the night
+   * that fed this day.
+   */
+  sleep: { max: 12, step: 0.25, target: 7.5, unit: 'hrs', icon: '😴', label: 'Last night' },
 } as const;
 
 export const MEAL_SOURCES = ['manual', 'preset', 'photo-estimate', 'food'] as const;
