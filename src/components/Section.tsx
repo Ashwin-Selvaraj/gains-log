@@ -16,9 +16,18 @@ import { useState } from 'react';
  * summary so its state is legible while collapsed, and can fold away when it
  * is not part of most days.
  */
+/** The five tones defined in globals.css, one per section of Today. */
+export type SectionTone =
+  | 'training'
+  | 'fuel'
+  | 'body'
+  | 'learning'
+  | 'practices';
+
 export function Section({
   title,
   icon,
+  tone,
   summary,
   done,
   onToggleDone,
@@ -29,6 +38,12 @@ export function Section({
 }: {
   title: string;
   icon?: string;
+  /**
+   * Colours the icon tile and the hairline under the header. Omitted for the
+   * two occasional sections (Meetings, Photos), which stay neutral on purpose
+   * — giving everything a colour would leave nothing distinguished by it.
+   */
+  tone?: SectionTone;
   /** Shown on the right of the header — the state you'd want without opening it. */
   summary?: React.ReactNode;
   /** When provided, the header carries this section's habit tick. */
@@ -44,6 +59,10 @@ export function Section({
 
   const Heading = collapsible ? 'button' : 'div';
 
+  // Read once into a local so the tile, the rule and the summary all reference
+  // the same channel triple rather than three near-identical inline strings.
+  const rgb = tone ? `var(--tone-${tone})` : null;
+
   return (
     <section className="card p-0">
       <div className="flex items-center gap-2 px-4 py-3">
@@ -58,7 +77,18 @@ export function Section({
           className="flex min-w-0 flex-1 items-center gap-2 text-left"
         >
           {icon && (
-            <span aria-hidden className="text-base">
+            <span
+              aria-hidden
+              // A tinted tile rather than a bare emoji: it gives the colour
+              // enough area to register at a glance while scrolling, which a
+              // single glyph never does.
+              className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg text-sm"
+              style={
+                rgb
+                  ? { backgroundColor: `rgb(${rgb} / 0.14)` }
+                  : { backgroundColor: 'rgb(var(--line) / 0.6)' }
+              }
+            >
               {icon}
             </span>
           )}
@@ -92,7 +122,18 @@ export function Section({
         )}
       </div>
 
-      {isOpen && <div className="space-y-3 border-t border-line px-4 py-4">{children}</div>}
+      {/* The divider carries the tone too — a hairline is enough to tie the
+          body of the section back to its header without tinting the content. */}
+      {isOpen && (
+        <div
+          className="space-y-3 border-t px-4 py-4"
+          style={{
+            borderTopColor: rgb ? `rgb(${rgb} / 0.22)` : 'rgb(var(--line))',
+          }}
+        >
+          {children}
+        </div>
+      )}
     </section>
   );
 }

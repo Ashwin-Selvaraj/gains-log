@@ -120,6 +120,7 @@ export function PracticesSection() {
     <Section
       title="Practices"
       icon="🔥"
+      tone="practices"
       summary={
         practices && practices.length > 0 ? `${doneCount}/${practices.length}` : undefined
       }

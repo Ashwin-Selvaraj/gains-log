@@ -385,6 +385,7 @@ export function DayEditor({
           separate grid three cards above the sets it refers to. */}
       <Section
         title="Training"
+        tone="training"
         icon="🏋️"
         done={entry.workoutDone}
         onToggleDone={() => stage('workoutDone', !entry.workoutDone)}
@@ -431,6 +432,7 @@ export function DayEditor({
           never on screen together. */}
       <Section
         title="Fuel"
+        tone="fuel"
         icon="🍽️"
         summary={
           <span className="tabular-nums">
@@ -457,6 +459,7 @@ export function DayEditor({
           tick. Weight used to share a card with two unrelated text notes. */}
       <Section
         title="Body"
+        tone="body"
         icon="📊"
         summary={
           <span className="tabular-nums">
@@ -518,6 +521,7 @@ export function DayEditor({
           Its tick and its note were in different cards. */}
       <Section
         title="Learning"
+        tone="learning"
         icon="📘"
         done={entry.learningDone}
         onToggleDone={() => stage('learningDone', !entry.learningDone)}

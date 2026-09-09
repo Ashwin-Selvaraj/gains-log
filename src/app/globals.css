@@ -24,6 +24,37 @@
   }
 }
 
+/* ── Section tones ─────────────────────────────────────────────────────────
+   One colour per section of Today, so the eye learns the screen by shape and
+   hue instead of re-reading five near-identical headings.
+
+   Deliberately narrow: these tint a small icon tile and a hairline under the
+   header, never a card background. A full-bleed colour per card turns a
+   tracker into a toybox — the restraint is what reads as considered rather
+   than decorated. All five are desaturated jewel tones from the same family
+   so they sit together; none of them is the accent green, which already means
+   "done" everywhere in this app and must not start meaning "food" as well.
+
+   Light values are darkened for contrast on white; dark values are lifted,
+   because a tone that reads rich on white turns to mud on near-black. */
+:root {
+  --tone-training: 186 62 48;
+  --tone-fuel: 166 111 22;
+  --tone-body: 21 116 132;
+  --tone-learning: 88 84 186;
+  --tone-practices: 146 60 152;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --tone-training: 244 116 100;
+    --tone-fuel: 233 176 84;
+    --tone-body: 78 194 205;
+    --tone-learning: 150 146 246;
+    --tone-practices: 212 130 220;
+  }
+}
+
 html {
   /* Keeps the layout from jumping when the iOS keyboard opens. */
   -webkit-text-size-adjust: 100%;
