@@ -4,6 +4,7 @@ import { loadSets, planKeysForWeekday } from '@/lib/workouts';
 import { computeRecords, lastSessionBefore } from '@/lib/prs';
 import { isDateKey, todayKey } from '@/lib/date';
 import { requireUser, unauthorized } from '@/lib/auth';
+import { resolveExerciseImages } from '@/lib/exercise-images';
 
 export const dynamic = 'force-dynamic';
 
@@ -70,7 +71,10 @@ export async function GET(req: Request) {
     });
   }
 
-  const sets = await loadSets(user.id, { keys });
+  const [sets, images] = await Promise.all([
+    loadSets(user.id, { keys }),
+    resolveExerciseImages(user.id, keys),
+  ]);
 
   const exercises = keys.map((key) => {
     const forKey = sets.filter((s) => s.exerciseKey === key);
@@ -96,6 +100,8 @@ export async function GET(req: Request) {
       best1RM: records?.best1RM?.est1RM ?? null,
       bodyweight: records?.bodyweight ?? false,
       weeksTrained: records?.weeksTrained ?? 0,
+      /** "" when there's no picture; the card falls back to the muscle icon. */
+      imageUrl: images.get(key) ?? '',
     };
   });
 

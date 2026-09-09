@@ -11,6 +11,7 @@ import type {
 } from '@/lib/types';
 import { CarryForward } from '@/components/CarryForward';
 import { ExercisePicker } from '@/components/ExercisePicker';
+import { ExerciseThumb } from '@/components/ExerciseThumb';
 import { MUSCLE_GROUPS, muscleGroupLabel } from '@/lib/exercises';
 import { formatDay } from '@/lib/date';
 
@@ -133,6 +134,11 @@ function ExerciseRow({
         >
           {complete ? '✓' : done.length || ''}
         </span>
+
+        {/* The picture earns its place on this row specifically: it is read
+            mid-set, by someone who may have picked the lift off a plan without
+            ever having done it. */}
+        <ExerciseThumb src={context?.imageUrl} name={name} size={34} />
 
         <span className="min-w-0 flex-1">
           <span className="block truncate text-sm font-medium">

@@ -75,6 +75,28 @@ export function photoKey(
   return `${kind}/${userId}/${year}/${month}/${id}.${ext}`;
 }
 
+/**
+ * Object key for an exercise illustration.
+ *
+ * Two shapes, deliberately not the `photoKey` scheme: these aren't dated, and
+ * they're addressed by exercise rather than by day. The catalogue's copy is
+ * keyed by exercise name so re-running the import overwrites in place instead
+ * of leaving a bucket full of superseded pictures; a person's own photo gets a
+ * unique id so the immutable cache header stays truthful when they replace it.
+ */
+export function exerciseImageKey(
+  exerciseKey: string,
+  contentType: string,
+  userId?: string,
+  id?: string,
+): string {
+  const ext = EXTENSIONS[contentType] ?? 'jpg';
+  const slug = exerciseKey.replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
+  return userId
+    ? `exercise/${userId}/${slug}-${id}.${ext}`
+    : `exercise/catalogue/${slug}.${ext}`;
+}
+
 export async function uploadPhoto(
   key: string,
   body: Uint8Array,

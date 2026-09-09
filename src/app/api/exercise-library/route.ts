@@ -6,6 +6,7 @@ import {
   nameKeyOf,
   scoreMatch,
 } from '@/lib/exercises';
+import { resolveExerciseImages } from '@/lib/exercise-images';
 
 export const dynamic = 'force-dynamic';
 
@@ -43,19 +44,30 @@ export async function GET(req: Request) {
   // Ranked in memory rather than with a SQL LIKE: the catalogue is a few
   // hundred rows at most, and scoring here means prefix matches can outrank
   // substring ones — "row" should offer "Rowing machine" before "Barbell row".
-  const ranked = rows
+  const top = rows
     .map((row) => ({ row, score: scoreMatch(q, row) }))
     .filter((r) => r.score > 0)
     .sort((a, b) => b.score - a.score || a.row.name.localeCompare(b.row.name))
     .slice(0, 40)
-    .map(({ row }) => ({
-      id: row.id,
-      name: row.name,
-      nameKey: row.nameKey,
-      muscleGroup: row.muscleGroup,
-      /** True for the user's own additions, so the UI can mark them. */
-      custom: row.userId !== null,
-    }));
+    .map(({ row }) => row);
+
+  // Only for what's actually being returned — resolving pictures for the whole
+  // catalogue to show forty of them would be the expensive half of this route.
+  const images = await resolveExerciseImages(
+    user.id,
+    top.map((row) => row.nameKey),
+  );
+
+  const ranked = top.map((row) => ({
+    id: row.id,
+    name: row.name,
+    nameKey: row.nameKey,
+    muscleGroup: row.muscleGroup,
+    /** True for the user's own additions, so the UI can mark them. */
+    custom: row.userId !== null,
+    /** "" when there's no picture — the UI falls back to the muscle icon. */
+    imageUrl: images.get(row.nameKey) ?? '',
+  }));
 
   return NextResponse.json({
     exercises: ranked,

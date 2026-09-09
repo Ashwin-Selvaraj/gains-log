@@ -91,6 +91,8 @@ export type ExerciseContext = {
   best1RM: number | null;
   bodyweight: boolean;
   weeksTrained: number;
+  /** Catalogue picture or the person's own; "" when there is none. */
+  imageUrl: string;
 };
 
 export type PlanExercise = {

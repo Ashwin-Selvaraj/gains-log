@@ -441,6 +441,7 @@ model User {
   habits        Habit[]
   habitLogs     HabitLog[]
   exercises     Exercise[]
+  exerciseImages ExerciseImage[]
 }
 
 model Account {
@@ -540,6 +541,10 @@ model Exercise {
   aliases     String @default("")
   /// One of MUSCLE_GROUPS in src/lib/exercises.ts.
   muscleGroup String @default("other")
+  /// Catalogue illustration on R2, or "" for the ones no honest match exists
+  /// for. Empty is a normal state, not a failure: a wrong picture is worse
+  /// than none, so an unmatched lift falls back to its muscle-group icon.
+  imageUrl    String @default("")
 
   createdAt DateTime @default(now())
 
@@ -547,6 +552,32 @@ model Exercise {
   @@unique([userId, nameKey])
   @@index([nameKey])
   @@index([muscleGroup])
+  @@index([userId])
+}
+
+/// One person's own photo for an exercise, overriding the catalogue picture.
+///
+/// A separate table rather than a column on Exercise, because the rows being
+/// overridden are the *shared* catalogue (userId null) — writing a personal
+/// photo onto them would show it to everyone. Keyed by exerciseKey rather than
+/// by Exercise.id so an override also covers a lift logged before it was ever
+/// added to the catalogue, and survives the catalogue row being reseeded.
+model ExerciseImage {
+  id     String @id @default(cuid())
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  /// Normalised name, the same key WorkoutSet.exerciseKey and Exercise.nameKey use.
+  exerciseKey String
+  url         String
+  /// R2 object key, kept so replacing or clearing the photo can delete the old
+  /// bytes instead of orphaning them in the bucket.
+  storageKey  String
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([userId, exerciseKey])
   @@index([userId])
 }
 

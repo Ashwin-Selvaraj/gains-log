@@ -2,6 +2,7 @@
 
 import { use, useEffect, useState } from 'react';
 import Link from 'next/link';
+import { ExerciseImageEditor } from '@/components/ExerciseImageEditor';
 import { LineChart } from '@/components/LineChart';
 import { PageSkeleton, SkeletonBlock } from '@/components/Skeleton';
 import { formatDay, todayKey } from '@/lib/date';
@@ -23,6 +24,9 @@ type Detail = {
     weeksTrained: number;
     weekStreak: number;
   };
+  imageUrl: string;
+  muscleGroup: string;
+  ownImage: boolean;
   series: { date: string; value: number }[];
   seriesLabel: string;
   sessions: {
@@ -100,6 +104,14 @@ export default function ExercisePage({ params }: { params: Promise<{ key: string
               : `Last trained ${r.daysSinceLast} days ago`}
         </p>
       </header>
+
+      <ExerciseImageEditor
+        exerciseKey={r.key}
+        name={r.name}
+        muscleGroup={data.muscleGroup}
+        imageUrl={data.imageUrl}
+        ownImage={data.ownImage}
+      />
 
       {/* Headline record */}
       <section className="card mb-4">

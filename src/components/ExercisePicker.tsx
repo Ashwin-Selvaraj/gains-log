@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from 'react';
 import { MUSCLE_GROUPS, muscleGroupLabel } from '@/lib/exercises';
+import { ExerciseThumb } from '@/components/ExerciseThumb';
 
 type LibraryEntry = {
   id: string;
@@ -9,6 +10,8 @@ type LibraryEntry = {
   nameKey: string;
   muscleGroup: string;
   custom: boolean;
+  /** "" when the exercise has no picture — see ExerciseThumb for the fallback. */
+  imageUrl: string;
 };
 
 /**
@@ -130,9 +133,15 @@ export function ExercisePicker({
               <button
                 type="button"
                 onClick={() => onPick(ex.name)}
-                className="flex w-full items-center justify-between gap-2 rounded-lg px-2 py-2 text-left transition-colors active:bg-line/50"
+                className="flex w-full items-center gap-2.5 rounded-lg px-2 py-1.5 text-left transition-colors active:bg-line/50"
               >
-                <span className="min-w-0 truncate text-sm font-medium">{ex.name}</span>
+                <ExerciseThumb
+                  src={ex.imageUrl}
+                  muscleGroup={ex.muscleGroup}
+                  name={ex.name}
+                  size={36}
+                />
+                <span className="min-w-0 flex-1 truncate text-sm font-medium">{ex.name}</span>
                 <span className="shrink-0 text-xs text-muted">
                   {ex.custom && <span className="mr-1">yours ·</span>}
                   {muscleGroupLabel(ex.muscleGroup)}
