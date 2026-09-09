@@ -19,6 +19,7 @@ const FIELDS = {
   waterLitres: 'float',
   workoutNote: 'text',
   learningNote: 'text',
+  workoutFocus: 'text',
 } as const;
 
 export async function GET(_req: Request, { params }: Params) {

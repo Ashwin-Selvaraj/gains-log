@@ -1,6 +1,6 @@
 'use client';
 
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import type {
   CarriedExercise,
@@ -11,6 +11,7 @@ import type {
 } from '@/lib/types';
 import { CarryForward } from '@/components/CarryForward';
 import { ExercisePicker } from '@/components/ExercisePicker';
+import { MUSCLE_GROUPS, muscleGroupLabel } from '@/lib/exercises';
 import { formatDay } from '@/lib/date';
 
 type Props = {
@@ -26,6 +27,9 @@ type Props = {
   /** The date this card is for — carry-forward needs it. */
   date?: string;
   onLogSet: (set: { exercise: string; reps: number; weightKg: number | null }) => void;
+  /** Comma-separated muscle groups when today isn't following the plan. */
+  focus?: string;
+  onChangeFocus?: (value: string) => void;
   onRemoveSet: (id: string) => void;
   onCarried?: () => void;
   onDropCarried?: (id: string) => void;
@@ -57,6 +61,7 @@ function ExerciseRow({
   onRemoveSet,
   onDrop,
   carriedFrom,
+  hint,
 }: {
   name: string;
   target?: { sets: number; reps: string };
@@ -73,6 +78,13 @@ function ExerciseRow({
   /** Present only for carried-over rows, which can be dropped from the day. */
   onDrop?: () => void;
   carriedFrom?: string;
+  /**
+   * Replaces the "extra" label. Focus rows are the session, not something
+   * logged outside it, so calling them "extra" is simply wrong — they show
+   * their muscle group instead, which also tells the two apart when two
+   * groups are mixed.
+   */
+  hint?: string;
 }) {
   const complete = target ? done.length >= target.sets : done.length > 0;
 
@@ -138,7 +150,7 @@ function ExerciseRow({
               done
                 .map((s) => `${s.reps}${s.weightKg ? `×${s.weightKg}` : ''}`)
                 .join(', ')}
-            {!target && done.length === 0 && 'extra'}
+            {!target && done.length === 0 && (hint ?? 'extra')}
           </span>
 
           {firstTime && (
@@ -268,6 +280,8 @@ export function WorkoutCard({
   onRemoveSet,
   onCarried,
   onDropCarried,
+  focus = '',
+  onChangeFocus,
 }: Props) {
   const [open, setOpen] = useState<string | null>(null);
   const [reps, setReps] = useState('');
@@ -275,6 +289,35 @@ export function WorkoutCard({
   // Exercises named by hand that have no sets yet — without this they'd vanish
   // the instant you added them.
   const [adHoc, setAdHoc] = useState<string[]>([]);
+  const [choosing, setChoosing] = useState(false);
+  /** Exercises for the chosen groups, fetched when a focus is set. */
+  const [focusExercises, setFocusExercises] = useState<
+    { id: string; name: string; muscleGroup: string }[]
+  >([]);
+
+  const focusGroups = useMemo(
+    () => focus.split(',').map((g) => g.trim()).filter(Boolean),
+    [focus],
+  );
+
+  // Only fetched when a focus is actually set — following the plan costs
+  // nothing extra.
+  useEffect(() => {
+    if (focusGroups.length === 0) {
+      setFocusExercises([]);
+      return;
+    }
+    let cancelled = false;
+    fetch(`/api/exercise-library?muscle=${encodeURIComponent(focusGroups.join(','))}`)
+      .then((r) => (r.ok ? r.json() : Promise.reject(new Error())))
+      .then((d: { exercises: { id: string; name: string; muscleGroup: string }[] }) => {
+        if (!cancelled) setFocusExercises(d.exercises);
+      })
+      .catch(() => !cancelled && setFocusExercises([]));
+    return () => {
+      cancelled = true;
+    };
+  }, [focusGroups]);
 
   const byExercise = useMemo(() => {
     const map = new Map<string, WorkoutSet[]>();
@@ -330,8 +373,14 @@ export function WorkoutCard({
     <section className="card space-y-1">
       <div className="flex items-baseline justify-between gap-2">
         <h2 className="min-w-0 truncate text-base font-semibold">
-          {isRest ? 'Rest day' : plan.name}
-          <span className="ml-2 text-xs font-normal text-muted">today&apos;s plan</span>
+          {focusGroups.length > 0
+            ? focusGroups.map(muscleGroupLabel).join(' + ')
+            : isRest
+              ? 'Rest day'
+              : plan.name}
+          <span className="ml-2 text-xs font-normal text-muted">
+            {focusGroups.length > 0 ? "today's focus" : "today's plan"}
+          </span>
         </h2>
         {sets.length > 0 && (
           <p className="shrink-0 text-sm tabular-nums text-muted">
@@ -341,7 +390,7 @@ export function WorkoutCard({
         )}
       </div>
 
-      {progress && progress.totalCount > 0 && (
+      {focusGroups.length === 0 && progress && progress.totalCount > 0 && (
         <div className="pb-1">
           <div className="mb-1 flex items-baseline justify-between text-xs">
             <span
@@ -366,21 +415,69 @@ export function WorkoutCard({
         </div>
       )}
 
-      {isRest && sets.length === 0 && (
+      {isRest && sets.length === 0 && focusGroups.length === 0 && (
         <p className="py-2 text-sm text-muted">
           Nothing scheduled today. Set your split on the Plan tab — or log something
           anyway below.
         </p>
       )}
 
+      {/* Swapping the day's muscle group is a per-day decision, not an edit to
+          the weekly split — see DailyEntry.workoutFocus. */}
+      {onChangeFocus && (choosing ? (
+        <FocusChooser
+          initial={focusGroups}
+          onCancel={() => setChoosing(false)}
+          onSave={(groups) => {
+            onChangeFocus(groups.join(','));
+            setChoosing(false);
+          }}
+        />
+      ) : (
+        <button
+          type="button"
+          onClick={() => setChoosing(true)}
+          className="text-xs font-medium text-accent"
+        >
+          {focusGroups.length > 0
+            ? 'Change focus'
+            : isRest
+              ? 'Training something today?'
+              : `Not doing ${plan.name.toLowerCase()} today?`}
+        </button>
+      ))}
+
+      {focusGroups.length > 0 && onChangeFocus && (
+        <button
+          type="button"
+          onClick={() => onChangeFocus('')}
+          className="ml-3 text-xs text-muted underline"
+        >
+          back to plan
+        </button>
+      )}
+
       <ul>
-        {(plan?.exercises ?? []).map((e) => (
-          <ExerciseRow
-            key={e.id || e.name}
-            {...rowProps(e.name)}
-            target={{ sets: e.sets, reps: e.reps }}
-          />
-        ))}
+        {/* With a focus set, the plan's exercises are not what's happening —
+            the chosen groups' exercises take their place. Logged sets still
+            appear either way, via `extras`. */}
+        {focusGroups.length > 0
+          ? focusExercises
+              .filter((e) => !byExercise.has(e.name))
+              .map((e) => (
+                <ExerciseRow
+                  key={e.id}
+                  {...rowProps(e.name)}
+                  hint={muscleGroupLabel(e.muscleGroup)}
+                />
+              ))
+          : (plan?.exercises ?? []).map((e) => (
+              <ExerciseRow
+                key={e.id || e.name}
+                {...rowProps(e.name)}
+                target={{ sets: e.sets, reps: e.reps }}
+              />
+            ))}
         {extras.map((name) => (
           <ExerciseRow key={name} {...rowProps(name)} />
         ))}
@@ -439,5 +536,71 @@ function AddExtra({ onAdd }: { onAdd: (name: string) => void }) {
         setOpen(false);
       }}
     />
+  );
+}
+
+/**
+ * Multi-select of muscle groups for a day that isn't following the plan.
+ *
+ * Multi rather than single because the common real answer is two — "chest and
+ * shoulders" — and forcing one at a time would mean doing this twice for the
+ * most ordinary case.
+ */
+function FocusChooser({
+  initial,
+  onSave,
+  onCancel,
+}: {
+  initial: string[];
+  onSave: (groups: string[]) => void;
+  onCancel: () => void;
+}) {
+  const [picked, setPicked] = useState<string[]>(initial);
+
+  const toggle = (key: string) =>
+    setPicked((prev) =>
+      prev.includes(key) ? prev.filter((k) => k !== key) : [...prev, key],
+    );
+
+  return (
+    <div className="space-y-2 rounded-xl border border-line bg-surface p-3">
+      <p className="text-sm font-medium">What are you training today?</p>
+
+      <div className="grid grid-cols-4 gap-1.5">
+        {MUSCLE_GROUPS.map((g) => {
+          const on = picked.includes(g.key);
+          return (
+            <button
+              key={g.key}
+              type="button"
+              aria-pressed={on}
+              onClick={() => toggle(g.key)}
+              className={`flex min-h-[52px] flex-col items-center justify-center gap-0.5 rounded-xl border text-[0.65rem] font-medium transition active:scale-95 ${
+                on ? 'border-accent bg-accent/10 text-ink' : 'border-line bg-card text-muted'
+              }`}
+            >
+              <span aria-hidden className="text-sm">
+                {g.icon}
+              </span>
+              {g.label}
+            </button>
+          );
+        })}
+      </div>
+
+      <div className="flex gap-2">
+        <button
+          type="button"
+          className="btn-primary flex-1"
+          disabled={picked.length === 0}
+          onClick={() => onSave(picked)}
+        >
+          Show these exercises
+        </button>
+        <button type="button" className="btn-quiet" onClick={onCancel}>
+          Cancel
+        </button>
+      </div>
+    </div>
   );
 }

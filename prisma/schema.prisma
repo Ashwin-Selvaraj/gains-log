@@ -43,6 +43,11 @@ model DailyEntry {
   walkMinutes  Int?
   workoutNote  String  @default("")
   learningNote String  @default("")
+  /// Muscle groups actually being trained today when they differ from the
+  /// weekly plan — comma-separated keys from MUSCLE_GROUPS, e.g. "chest,shoulders".
+  /// Empty means "following the plan". Stored per day rather than editing the
+  /// plan itself: swapping leg day for chest once is not a change to the split.
+  workoutFocus String  @default("")
 
   meetings Meeting[]
   meals    MealEntry[]

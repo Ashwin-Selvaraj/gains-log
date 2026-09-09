@@ -173,6 +173,8 @@ export type Entry = {
   sleepHours: number | null;
   workoutNote: string;
   learningNote: string;
+  /** Comma-separated muscle groups when today differs from the plan. */
+  workoutFocus: string;
   meetings: Meeting[];
   meals: Meal[];
   sets: WorkoutSet[];

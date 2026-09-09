@@ -391,9 +391,16 @@ export function DayEditor({
         onToggleDone={() => stage('workoutDone', !entry.workoutDone)}
         doneLabel="Mark today's workout done"
         summary={
-          progress
-            ? `${progress.doneCount}/${progress.totalCount}`
-            : (plan?.name ?? undefined)
+          // Plan progress is meaningless once the day has been switched to a
+          // different muscle group — "0/4" would be counting leg exercises
+          // nobody intends to do. The set count is the honest number then.
+          entry.workoutFocus
+            ? entry.sets.length > 0
+              ? `${entry.sets.length} ${entry.sets.length === 1 ? 'set' : 'sets'}`
+              : undefined
+            : progress
+              ? `${progress.doneCount}/${progress.totalCount}`
+              : (plan?.name ?? undefined)
         }
       >
         <WorkoutCard
@@ -410,6 +417,8 @@ export function DayEditor({
           }}
           onLogSet={addSet}
           onRemoveSet={removeSet}
+          focus={entry.workoutFocus}
+          onChangeFocus={(value) => stage('workoutFocus', value)}
         />
 
         <div>

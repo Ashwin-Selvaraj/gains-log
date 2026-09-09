@@ -24,13 +24,18 @@ export async function GET(req: Request) {
 
   const params = new URL(req.url).searchParams;
   const q = (params.get('q') ?? '').trim();
-  const muscle = params.get('muscle');
+  // Comma-separated, because "I'm doing chest and shoulders today" is one
+  // question and shouldn't cost two round trips.
+  const muscles = (params.get('muscle') ?? '')
+    .split(',')
+    .map((m) => m.trim())
+    .filter((m) => MUSCLE_GROUP_KEYS.includes(m));
 
   const rows = await prisma.exercise.findMany({
     where: {
       // Shared rows plus the caller's own; never anyone else's.
       OR: [{ userId: null }, { userId: user.id }],
-      ...(muscle && MUSCLE_GROUP_KEYS.includes(muscle) ? { muscleGroup: muscle } : {}),
+      ...(muscles.length ? { muscleGroup: { in: muscles } } : {}),
     },
     select: { id: true, name: true, nameKey: true, muscleGroup: true, aliases: true, userId: true },
   });
