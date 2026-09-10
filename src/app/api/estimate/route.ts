@@ -1,14 +1,18 @@
 import { NextResponse } from 'next/server';
-import Anthropic from '@anthropic-ai/sdk';
 import { prisma } from '@/lib/prisma';
 import { macrosFor, matchFood, sumMacros, type Macros } from '@/lib/nutrition';
 import { requireUser, unauthorized } from '@/lib/auth';
 import { getQuota, recordAiUse } from '@/lib/ai-quota';
+import {
+  analyseImage,
+  VISION_MODEL,
+  VisionError,
+  VisionRefusal,
+  visionConfigured,
+} from '@/lib/vision';
 
 export const dynamic = 'force-dynamic';
 export const maxDuration = 60;
-
-const MODEL = process.env.ANTHROPIC_MODEL || 'claude-opus-5';
 
 const SUPPORTED_MEDIA = ['image/jpeg', 'image/png', 'image/webp', 'image/gif'] as const;
 type MediaType = (typeof SUPPORTED_MEDIA)[number];
@@ -41,6 +45,16 @@ Rules:
 - "caveat" is one short sentence naming the single biggest uncertainty in THIS
   photo — an obscured dish, an unclear portion, a dish you are unsure of.`;
 
+/**
+ * Gemini's OpenAPI subset, not JSON Schema: a field that may be absent is
+ * `nullable: true` rather than a union with "null", and `additionalProperties`
+ * is not understood — passing either straight through fails as a bare
+ * INVALID_ARGUMENT with nothing naming the offending key.
+ *
+ * `propertyOrdering` is honoured by Gemini and worth setting: the model fills
+ * the fields in the order given, so naming the item before estimating its size
+ * means the portion is judged with the identification already made.
+ */
 const SCHEMA = {
   type: 'object',
   properties: {
@@ -56,23 +70,25 @@ const SCHEMA = {
         properties: {
           name: { type: 'string', description: 'Plain generic food name.' },
           count: {
-            type: ['number', 'null'],
+            type: 'number',
+            nullable: true,
             description: 'Number of pieces, for countable foods. Null if served by volume.',
           },
           grams: {
-            type: ['number', 'null'],
+            type: 'number',
+            nullable: true,
             description: 'Estimated grams, for foods served by volume. Null if counted.',
           },
         },
-        required: ['name', 'count', 'grams'],
-        additionalProperties: false,
+        required: ['name'],
+        propertyOrdering: ['name', 'count', 'grams'],
       },
     },
     unclear: { type: 'boolean', description: 'True if the photo is too unclear to be confident.' },
     caveat: { type: 'string', description: 'One sentence on the main uncertainty.' },
   },
   required: ['mealName', 'items', 'unclear', 'caveat'],
-  additionalProperties: false,
+  propertyOrdering: ['mealName', 'items', 'unclear', 'caveat'],
 } as const;
 
 type VisionResult = {
@@ -97,9 +113,9 @@ export type EstimatedItem = {
 export async function POST(req: Request) {
   const user = await requireUser();
   if (!user) return unauthorized();
-  if (!process.env.ANTHROPIC_API_KEY) {
+  if (!visionConfigured()) {
     return NextResponse.json(
-      { error: 'ANTHROPIC_API_KEY is not set — add it to .env and restart.' },
+      { error: 'GOOGLE_AI_STUDIO_API_KEY is not set — add it to .env and restart.' },
       { status: 501 },
     );
   }
@@ -134,72 +150,78 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: `Unsupported image type: ${mediaType}` }, { status: 415 });
   }
 
-  /**
-   * Identity-linked API keys (the kind issued to a user rather than to a
-   * workspace) are rejected unless the request names the workspace it acts in.
-   * The SDK doesn't send that header on its own, so it's passed through here
-   * when ANTHROPIC_WORKSPACE_ID is set; keys that don't need it are unaffected.
-   */
-  const workspaceId = process.env.ANTHROPIC_WORKSPACE_ID?.trim();
-  const client = new Anthropic({
-    defaultHeaders: workspaceId ? { 'anthropic-workspace-id': workspaceId } : undefined,
-  });
+  let vision: VisionResult;
+  let spent: Awaited<ReturnType<typeof recordAiUse>>;
+  let foods: Awaited<ReturnType<typeof prisma.food.findMany>>;
 
   try {
     // The food table is fetched alongside the vision call rather than after it —
     // they don't depend on each other, and this is a slow path already.
-    const [response, foods] = await Promise.all([
-      client.messages.create({
-        model: MODEL,
-        max_tokens: 2000,
+    [vision, foods] = await Promise.all([
+      analyseImage<VisionResult>({
         system: SYSTEM,
-        // Identifying a plate is a perceptual call, not a reasoning problem;
-        // low effort keeps it fast enough to use standing in a canteen queue.
-        output_config: { effort: 'low', format: { type: 'json_schema', schema: SCHEMA } },
-        messages: [
-          {
-            role: 'user',
-            content: [
-              { type: 'image', source: { type: 'base64', media_type: mediaType, data } },
-              { type: 'text', text: 'What food is on this plate, and how much of each?' },
-            ],
-          },
-        ],
+        prompt: 'What food is on this plate, and how much of each?',
+        schema: SCHEMA,
+        mediaType,
+        data,
       }),
       prisma.food.findMany({ where: { OR: [{ userId: null }, { userId: user.id }] } }),
     ]);
 
-    // Counted here: Anthropic has answered, so the call has been paid for
-    // whatever happens to the parsing below. Anything that failed earlier —
-    // an unsupported file, a connection error — never reaches this line and so
-    // never costs the user one of their five.
-    const spent = await recordAiUse(user);
-
-    if (response.stop_reason === 'refusal') {
+    // Counted only once the model has actually answered. Anything that failed
+    // earlier — an unsupported file, a bad key, a connection error — never
+    // reaches this line and so never costs one of the day's five.
+    spent = await recordAiUse(user);
+  } catch (err) {
+    if (err instanceof VisionRefusal) {
       return NextResponse.json(
         {
-          error: 'Claude declined to analyse this image. Log the meal manually instead.',
-          quota: spent,
+          error: `Gemini would not analyse this image (${err.reason}). Log the meal manually instead.`,
         },
         { status: 422 },
       );
     }
 
-    const text = response.content
-      .filter((b) => b.type === 'text')
-      .map((b) => b.text)
-      .join('');
+    if (err instanceof VisionError) {
+      console.error('[estimate]', err.googleStatus ?? err.status, err.message);
 
-    let vision: VisionResult;
-    try {
-      vision = JSON.parse(text) as VisionResult;
-    } catch {
+      // Each of these needs a different fix, so each says which. Flattening
+      // them into "Estimate failed" is what sent the last investigation after
+      // the wrong cause entirely.
+      if (err.googleStatus === 'UNAUTHENTICATED' || /API key/i.test(err.message)) {
+        return NextResponse.json(
+          { error: 'GOOGLE_AI_STUDIO_API_KEY is invalid or lacks access to the model.' },
+          { status: 401 },
+        );
+      }
+      if (err.googleStatus === 'RESOURCE_EXHAUSTED') {
+        return NextResponse.json(
+          { error: "Google AI Studio rate limit hit — wait a moment and retry." },
+          { status: 429 },
+        );
+      }
+      if (err.googleStatus === 'NOT_FOUND') {
+        return NextResponse.json(
+          {
+            error: `The model "${VISION_MODEL}" is not available to this key. Set GOOGLE_AI_MODEL in .env to one it can reach.`,
+          },
+          { status: 400 },
+        );
+      }
       return NextResponse.json(
-        { error: 'Could not read an estimate from the response. Try again.', quota: spent },
-        { status: 502 },
+        { error: `Google AI Studio error (${err.status}): ${err.message}` },
+        { status: err.status >= 500 ? 502 : err.status },
       );
     }
 
+    console.error('[estimate]', err);
+    return NextResponse.json(
+      { error: err instanceof Error ? `Estimate failed: ${err.message}` : 'Estimate failed.' },
+      { status: 500 },
+    );
+  }
+
+  {
     const items: EstimatedItem[] = (vision.items ?? []).map((raw) => {
       const food = matchFood(foods, raw.name);
 
@@ -244,54 +266,5 @@ export async function POST(req: Request) {
       unrecognised,
       quota: spent,
     });
-  } catch (err) {
-    if (err instanceof Anthropic.RateLimitError) {
-      return NextResponse.json(
-        { error: 'Rate limited by the Anthropic API — wait a moment and retry.' },
-        { status: 429 },
-      );
-    }
-    if (err instanceof Anthropic.AuthenticationError) {
-      return NextResponse.json({ error: 'ANTHROPIC_API_KEY is invalid.' }, { status: 401 });
-    }
-    if (
-      err instanceof Anthropic.BadRequestError &&
-      String(err.message).includes('anthropic-workspace-id')
-    ) {
-      return NextResponse.json(
-        {
-          error:
-            'This API key is identity-linked and needs a workspace id. Add ANTHROPIC_WORKSPACE_ID to .env (Anthropic Console → Settings → Workspaces) and restart.',
-        },
-        { status: 400 },
-      );
-    }
-    if (err instanceof Anthropic.APIConnectionError) {
-      return NextResponse.json(
-        { error: 'Could not reach the Anthropic API. Check your connection.' },
-        { status: 503 },
-      );
-    }
-
-    console.error('[estimate]', err);
-
-    // Pass the API's own explanation through instead of flattening every
-    // remaining failure to "Estimate failed". A rejected image, an unknown
-    // model id and an exhausted credit balance need three different fixes, and
-    // a generic message sends you hunting for the wrong one — as it just did.
-    if (err instanceof Anthropic.APIError) {
-      const detail =
-        (err as { error?: { error?: { message?: string } } })?.error?.error?.message ??
-        err.message;
-      return NextResponse.json(
-        { error: `Anthropic API error (${err.status ?? 'unknown'}): ${detail}` },
-        { status: 502 },
-      );
-    }
-
-    return NextResponse.json(
-      { error: err instanceof Error ? `Estimate failed: ${err.message}` : 'Estimate failed.' },
-      { status: 500 },
-    );
   }
 }

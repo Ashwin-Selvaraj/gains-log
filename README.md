@@ -34,7 +34,7 @@ reconnect.
 | Framework | Next.js 16 (App Router) + TypeScript |
 | Styling | Tailwind CSS, light/dark via system preference |
 | Database | Prisma — SQLite locally, Postgres in production |
-| AI | `@anthropic-ai/sdk`, `claude-opus-5` vision for photo estimates |
+| AI | Google AI Studio (Gemini) vision for photo estimates, over plain REST |
 | Offline | Service worker + a localStorage write outbox |
 
 ---
@@ -65,10 +65,10 @@ Open http://localhost:3000. The seed adds a few meal presets — edit or delete 
 on the **My Meals** tab.
 
 To use the food-photo estimate, put a key from
-[console.anthropic.com](https://console.anthropic.com/settings/keys) into `.env`:
+[aistudio.google.com/apikey](https://aistudio.google.com/apikey) into `.env`:
 
 ```
-ANTHROPIC_API_KEY="sk-ant-..."
+GOOGLE_AI_STUDIO_API_KEY="AIza..."
 ```
 
 Without it the rest of the app works normally and the photo button returns a clear
@@ -168,7 +168,7 @@ before deploying, add two environment variables:
 | Name | Value |
 |---|---|
 | `DATABASE_URL` | your Neon pooled connection string |
-| `ANTHROPIC_API_KEY` | your Anthropic key |
+| `GOOGLE_AI_STUDIO_API_KEY` | your Google AI Studio key |
 
 Deploy. The build runs `prisma db push` against Neon automatically, so the tables are
 created on the first deploy — no manual migration step.

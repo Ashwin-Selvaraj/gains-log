@@ -1,6 +1,8 @@
 import Link from 'next/link';
-import { auth, signOut } from '@/lib/auth';
+import { cookies } from 'next/headers';
+import { auth } from '@/lib/auth';
 import { Menu } from '@/components/Menu';
+import { SignOutButton } from '@/components/SignOutButton';
 
 /**
  * Who you're signed in as, plus the way out.
@@ -13,6 +15,19 @@ export async function AccountMenu() {
   const session = await auth();
   const user = session?.user;
   if (!user?.email) return null;
+
+  /**
+   * For the no-JS submit path only. Both names are checked because Auth.js
+   * prefixes the cookie with __Host- whenever it is issuing secure cookies,
+   * which is production but not localhost. The value is "<token>|<hash>" and
+   * only the token half goes in the form.
+   */
+  const jar = await cookies();
+  const csrfToken = (
+    jar.get('__Host-authjs.csrf-token')?.value ??
+    jar.get('authjs.csrf-token')?.value ??
+    ''
+  ).split('|')[0];
 
   const label = user.name?.trim() || user.email;
   const initial = label[0]?.toUpperCase() ?? '?';
@@ -53,16 +68,7 @@ export async function AccountMenu() {
 
       <div className="border-t border-line" />
 
-      <form
-        action={async () => {
-          'use server';
-          await signOut({ redirectTo: '/signin' });
-        }}
-      >
-        <button type="submit" className={item}>
-          Sign out
-        </button>
-      </form>
+      <SignOutButton className={item} csrfToken={csrfToken} />
     </Menu>
   );
 }

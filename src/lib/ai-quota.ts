@@ -74,7 +74,7 @@ export async function getQuota(user: {
  * Records one call against today's allowance and returns the updated quota.
  *
  * Called *after* the model has answered, so a request that fails before
- * reaching Anthropic — an unsupported file, a dropped connection — costs
+ * reaching the model — an unsupported file, a dropped connection — costs
  * nothing and consumes nothing. The upsert's `increment` makes the write
  * atomic, so two photos submitted at once cannot both read "3 used" and both
  * store 4.
