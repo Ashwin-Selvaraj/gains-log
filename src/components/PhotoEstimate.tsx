@@ -83,6 +83,8 @@ export function PhotoEstimate({ date, onConfirm }: Props) {
   /** Separate from `error`: the meal still saved, just without its photo. */
   const [warning, setWarning] = useState<string | null>(null);
   const [quota, setQuota] = useState<Quota | null>(null);
+  /** Whether this meal should also be remembered as a reusable combo. */
+  const [alsoPreset, setAlsoPreset] = useState(false);
 
   function reset() {
     setPhoto(null);
@@ -90,6 +92,7 @@ export function PhotoEstimate({ date, onConfirm }: Props) {
     setItems([]);
     setName('');
     setError(null);
+    setAlsoPreset(false);
     if (inputRef.current) inputRef.current.value = '';
   }
 
@@ -181,6 +184,10 @@ export function PhotoEstimate({ date, onConfirm }: Props) {
   }
 
   const totals = sum(items);
+  // Only matched items can be reused as a combo, so the label says how many
+  // rather than letting the saved combo silently come out lighter than the meal.
+  const matchedCount = items.filter((i) => i.foodId).length;
+  const unmatchedCount = items.length - matchedCount;
   /** Out of allowance. Admins are never capped, so `remaining` is null for them. */
   const spent = quota !== null && !quota.unlimited && (quota.remaining ?? 1) <= 0;
 
@@ -196,6 +203,59 @@ export function PhotoEstimate({ date, onConfirm }: Props) {
    * misconfigured. On failure the meal saves with no photo, and the reason
    * is surfaced rather than swallowed.
    */
+  /**
+   * Files this meal away as a reusable combo, so tomorrow's identical
+   * breakfast is one tap instead of another photo and another model call.
+   *
+   * Only items matched to a food can become combo rows — a preset item is a
+   * foreign key to Food, and an unmatched name has no macros behind it to
+   * reuse. Rather than refuse the whole combo for one stray item, the matched
+   * ones are kept and the dropped names are reported: a combo whose total
+   * quietly disagrees with the meal you just logged would be worse than either
+   * refusing or explaining.
+   *
+   * Returns notes to show, never throws. The meal is the point of this screen;
+   * a combo that failed to save must not take the meal down with it.
+   */
+  async function saveAsPreset(): Promise<string[]> {
+    const matched = items.filter((i) => i.foodId);
+    const dropped = items.filter((i) => !i.foodId).map((i) => i.name);
+
+    try {
+      const res = await fetch('/api/presets', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          name: name.trim(),
+          items: matched.map((i) => ({ foodId: i.foodId, grams: i.grams })),
+          // Only read when items is empty — the manual-macro fallback that
+          // exists for combinations with nothing in the food table behind them.
+          ...(matched.length === 0
+            ? { calories: totals.kcal, protein: totals.protein }
+            : {}),
+        }),
+      });
+      if (!res.ok) {
+        const json = (await res.json().catch(() => ({}))) as { error?: string };
+        return [`Meal saved, but the combo wasn't — ${json.error ?? 'try again from Meals.'}`];
+      }
+    } catch {
+      return ['Meal saved, but the combo wasn\'t — you were offline.'];
+    }
+
+    if (matched.length === 0) {
+      return [
+        `Combo saved with just the totals — nothing on this plate is in your food list yet.`,
+      ];
+    }
+    if (dropped.length > 0) {
+      return [
+        `Combo saved without ${dropped.join(' and ')} — add ${dropped.length === 1 ? 'it' : 'them'} on the Meals tab to include ${dropped.length === 1 ? 'it' : 'them'} next time.`,
+      ];
+    }
+    return [`Saved “${name.trim()}” as a combo.`];
+  }
+
   async function save() {
     setSaving(true);
     setError(null);
@@ -203,10 +263,12 @@ export function PhotoEstimate({ date, onConfirm }: Props) {
     try {
       let photoUrl: string | null = null;
       let photoId: string | undefined;
-      // Set after reset() below, which clears everything else — the meal
-      // saves either way, so this is a note about the photo, not a failure of
-      // the save itself.
-      let warn: string | null = null;
+      /**
+       * Collected, then shown after reset() clears everything else. These are
+       * notes about the extras — the photo, the combo — never about the meal,
+       * which is the point of the screen and saves regardless.
+       */
+      const notes: string[] = [];
 
       if (photo) {
         try {
@@ -221,16 +283,18 @@ export function PhotoEstimate({ date, onConfirm }: Props) {
             photoUrl = json.url;
             photoId = json.id;
           } else {
-            warn = `Saved without the photo — ${json.error ?? 'photo storage failed'}.`;
+            notes.push(`Saved without the photo — ${json.error ?? 'photo storage failed'}.`);
           }
         } catch {
-          warn = 'Saved without the photo — could not reach photo storage.';
+          notes.push('Saved without the photo — could not reach photo storage.');
         }
       }
 
+      if (alsoPreset) notes.push(...(await saveAsPreset()));
+
       onConfirm({ name: name.trim(), macros: totals, photoUrl, photoId });
       reset();
-      if (warn) setWarning(warn);
+      if (notes.length) setWarning(notes.join(' '));
     } finally {
       setSaving(false);
     }
@@ -400,6 +464,26 @@ export function PhotoEstimate({ date, onConfirm }: Props) {
               {totals.carbs} g · Fat {totals.fat} g · Fibre {totals.fiber} g
             </p>
           </div>
+
+          {/* Offered here rather than as a second button: logging the meal and
+              remembering it are not alternatives, and the meal you have just
+              corrected the portions on is exactly the one worth keeping. */}
+          <label className="flex cursor-pointer items-center gap-3 rounded-xl border border-line bg-surface px-3 py-2.5">
+            <input
+              type="checkbox"
+              checked={alsoPreset}
+              onChange={(e) => setAlsoPreset(e.target.checked)}
+              className="h-4 w-4 shrink-0 accent-[rgb(var(--accent))]"
+            />
+            <span className="min-w-0">
+              <span className="block text-sm font-medium">Save as a combo</span>
+              <span className="block text-xs text-muted">
+                {unmatchedCount > 0
+                  ? `${matchedCount} of ${items.length} items can be reused — one tap to log them next time.`
+                  : 'One tap to log this again tomorrow, no photo needed.'}
+              </span>
+            </span>
+          </label>
 
           <div className="flex gap-2">
             <button
