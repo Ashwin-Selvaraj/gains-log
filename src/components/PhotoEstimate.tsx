@@ -62,6 +62,19 @@ const toRow = (item: EstimatedItem): Row => ({
   draft: String(Math.round(item.grams)),
 });
 
+/**
+ * Whether the shared photo for this page load has already been taken.
+ *
+ * Module scope, not component state, because the thing it guards against is
+ * the component running its mount effect twice — which React does in
+ * development on purpose, and which a remount does at any time. The first
+ * version used the cache entry itself as the guard, deleting it before the
+ * estimate started; the second run then found an empty cache and the shared
+ * photo was silently dropped. A flag that outlives the component is the only
+ * thing that can tell "already handled" from "nothing was shared".
+ */
+let sharedPhotoTaken = false;
+
 /** Mirrors the shape returned by /api/estimate/quota. */
 type Quota = {
   used: number;
@@ -71,6 +84,7 @@ type Quota = {
 };
 
 export function PhotoEstimate({ date, onConfirm }: Props) {
+  const rootRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const cameraRef = useRef<HTMLInputElement>(null);
   const [photo, setPhoto] = useState<string | null>(null);
@@ -103,6 +117,56 @@ export function PhotoEstimate({ date, onConfirm }: Props) {
       .then((r) => (r.ok ? r.json() : null))
       .then((q: Quota | null) => q && setQuota(q))
       .catch(() => {});
+  }, []);
+
+  /**
+   * Picks up a photo shared into the app from somewhere else.
+   *
+   * The service worker has already parked it in a cache by the time this page
+   * loads (see receiveShare in public/sw.js) — there was no page open to hand
+   * it to when the share arrived. Reading it here means sharing a plate from
+   * the camera roll is the entire interaction: no tap on this screen at all.
+   *
+   * The home-screen shortcut does not come through here. It has its own page,
+   * /snap, for a reason worth recording: the first attempt pointed the
+   * shortcut at Today and tried to scroll this control into view, and that
+   * could not be made to work. The scroll fires while the day's data is still
+   * arriving, so everything above grows and carries the target past wherever
+   * it was just scrolled to. Fixed delays, then settle-detection, both failed
+   * the same way. A destination with nothing above it needs no scrolling.
+   */
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    if (params.get('shared') !== 'meal') return;
+
+    // Claimed synchronously, before any await, so a second invocation cannot
+    // slip past between the check and the read.
+    if (sharedPhotoTaken) return;
+    sharedPhotoTaken = true;
+
+    const url = new URL(window.location.href);
+    url.searchParams.delete('shared');
+    window.history.replaceState({}, '', url.pathname + url.search);
+
+    void (async () => {
+      try {
+        const cache = await caches.open('gains-share');
+        const res = await cache.match('/__shared-image');
+        if (!res) {
+          setError('That shared photo had already gone. Try taking one here instead.');
+          return;
+        }
+        const blob = await res.blob();
+        // Cleared only once the bytes are in hand — deleting first meant a
+        // remount lost the photo entirely.
+        await cache.delete('/__shared-image');
+        await handleFile(new File([blob], 'shared.jpg', { type: blob.type || 'image/jpeg' }));
+      } catch {
+        setError('That shared photo could not be read. Try taking one here instead.');
+      }
+    })();
+    // Runs once on mount: this is an entry point, not state to keep in sync.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   async function handleFile(file: File) {
@@ -301,7 +365,7 @@ export function PhotoEstimate({ date, onConfirm }: Props) {
   }
 
   return (
-    <div className="space-y-3">
+    <div ref={rootRef} data-photo-estimate="" className="space-y-3">
       {/* `capture` forced the camera open, so a photo already in the gallery
           could not be used at all. Two inputs, two buttons — one each. */}
       <input

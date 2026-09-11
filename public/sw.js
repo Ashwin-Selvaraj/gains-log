@@ -7,9 +7,16 @@
  * still doesn't support the latter.
  */
 
-const VERSION = 'v2';
+const VERSION = 'v3';
 const SHELL = `gains-shell-${VERSION}`;
 const DATA = `gains-data-${VERSION}`;
+/**
+ * Deliberately unversioned: a photo shared in mid-upgrade must survive the
+ * activate sweep that clears the old versioned caches, or the share is lost
+ * exactly when a deploy happens to land.
+ */
+const SHARE = 'gains-share';
+const SHARED_IMAGE = '/__shared-image';
 const ROUTES = ['/', '/meals', '/report', '/history'];
 
 self.addEventListener('install', (event) => {
@@ -29,7 +36,7 @@ self.addEventListener('activate', (event) => {
       const keys = await caches.keys();
       await Promise.all(
         keys
-          .filter((k) => k !== SHELL && k !== DATA)
+          .filter((k) => k !== SHELL && k !== DATA && k !== SHARE)
           .map((k) => caches.delete(k)),
       );
       await self.clients.claim();
@@ -63,8 +70,44 @@ async function cacheFirst(request, cacheName) {
   return response;
 }
 
+/**
+ * Where a photo shared from the camera roll is parked on its way in.
+ *
+ * The share arrives as a POST that the operating system makes on the app's
+ * behalf; there is no page open yet to hand the file to. So it is stashed
+ * here, the POST answers with a redirect, and the page that loads reads it
+ * back out — see PhotoEstimate, which clears it immediately after.
+ */
+async function receiveShare(request) {
+  try {
+    const form = await request.formData();
+    const file = form.get('image');
+    if (file && file.size > 0) {
+      const cache = await caches.open(SHARE);
+      await cache.put(
+        SHARED_IMAGE,
+        new Response(file, { headers: { 'Content-Type': file.type || 'image/jpeg' } }),
+      );
+      return Response.redirect('/snap?shared=meal', 303);
+    }
+  } catch (err) {
+    // Falls through to the app rather than showing the OS an error page —
+    // a share that failed to parse should land you on Today, not nowhere.
+  }
+  return Response.redirect('/', 303);
+}
+
 self.addEventListener('fetch', (event) => {
   const { request } = event;
+
+  // Checked before the non-GET bail-out below, because this is the one write
+  // that must be handled here: it is the operating system posting to us, not
+  // the app, so the outbox cannot be the thing that catches it.
+  if (request.method === 'POST' && new URL(request.url).pathname === '/share-target') {
+    event.respondWith(receiveShare(request));
+    return;
+  }
+
   if (request.method !== 'GET') return; // writes are the outbox's job
 
   const url = new URL(request.url);
