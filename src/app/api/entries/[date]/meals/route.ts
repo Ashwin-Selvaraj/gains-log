@@ -5,6 +5,7 @@ import { isDateKey } from '@/lib/date';
 import { MEAL_SLOT_KEYS, MEAL_SOURCES, type MealSlot, type MealSource } from '@/lib/goals';
 import { macrosFor, sumMacros, type Macros } from '@/lib/nutrition';
 import { requireUser, unauthorized } from '@/lib/auth';
+import { emitEventInBackground } from '@/lib/events';
 
 export const dynamic = 'force-dynamic';
 
@@ -150,5 +151,45 @@ export async function POST(req: Request, { params }: Params) {
     });
   }
 
+  void announceProteinTarget(user.id, date);
+
   return NextResponse.json(meal, { status: 201 });
+}
+
+/**
+ * Says so the moment the day's protein target is met.
+ *
+ * Worth pushing precisely because it is the one number you cannot feel. You
+ * know whether you trained; you do not know you crossed 140 g until something
+ * adds it up — and knowing at lunch that you are already there, or still
+ * thirty short, is what changes what you eat next.
+ *
+ * The once-a-day guard lives in emitEvent's unique index, so this runs after
+ * every meal and stays silent for all but the one that crosses the line.
+ */
+async function announceProteinTarget(userId: string, date: string): Promise<void> {
+  try {
+    const [settings, entry] = await Promise.all([
+      prisma.settings.findUnique({ where: { userId }, select: { proteinTarget: true } }),
+      prisma.dailyEntry.findFirst({
+        where: { userId, date },
+        select: { meals: { select: { protein: true } } },
+      }),
+    ]);
+    if (!settings || !entry) return;
+
+    const total = entry.meals.reduce((sum, m) => sum + (m.protein ?? 0), 0);
+    if (total < settings.proteinTarget) return;
+
+    emitEventInBackground(userId, {
+      kind: 'goal',
+      subject: 'protein',
+      date,
+      title: 'Protein target met',
+      body: `${Math.round(total)} g of ${settings.proteinTarget} g — done for the day.`,
+      url: '/',
+    });
+  } catch (err) {
+    console.error('[meals] protein target check failed', err);
+  }
 }

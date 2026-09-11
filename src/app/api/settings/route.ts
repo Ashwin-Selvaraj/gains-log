@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { SETTINGS_BOUNDS, getSettings } from '@/lib/settings';
 import { requireUser, unauthorized } from '@/lib/auth';
+import { EVENT_KEYS } from '@/lib/event-kinds';
 import { calendarConnected } from '@/lib/calendar';
 
 export const dynamic = 'force-dynamic';
@@ -52,6 +53,17 @@ export async function PATCH(req: Request) {
       return NextResponse.json({ error: 'reminderTime must be HH:MM' }, { status: 400 });
     }
     data.reminderTime = time;
+  }
+  if (body.notifyEvents !== undefined) {
+    // Stored as a normalised, deduplicated list of known keys. Anything the
+    // client sends that this version does not recognise is dropped rather than
+    // rejected, so an older phone posting back a key that has since been
+    // removed cannot lock the settings screen out of saving.
+    const raw = Array.isArray(body.notifyEvents)
+      ? body.notifyEvents.map(String)
+      : String(body.notifyEvents).split(',');
+    const kinds = [...new Set(raw.map((k) => k.trim()).filter((k) => EVENT_KEYS.includes(k)))];
+    data.notifyEvents = kinds.join(',');
   }
   if (body.timezone !== undefined) {
     const tz = String(body.timezone).trim();

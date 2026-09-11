@@ -7,7 +7,7 @@
  * still doesn't support the latter.
  */
 
-const VERSION = 'v1';
+const VERSION = 'v2';
 const SHELL = `gains-shell-${VERSION}`;
 const DATA = `gains-data-${VERSION}`;
 const ROUTES = ['/', '/meals', '/report', '/history'];
@@ -108,19 +108,42 @@ self.addEventListener('push', (event) => {
     if (event.data) data.body = event.data.text();
   }
 
-  event.waitUntil(
-    self.registration.showNotification(data.title, {
-      body: data.body,
-      icon: '/icon-192.png',
-      badge: '/icon-192.png',
-      // Same tag replaces an older unread reminder instead of stacking three
-      // of them by Friday.
-      tag: data.tag || 'gains-log',
-      renotify: true,
-      data: { url: data.url || '/' },
-    }),
-  );
+  event.waitUntil(deliver(data));
 });
+
+/**
+ * An event push goes to the screen you are looking at, or to the OS — never
+ * both, and never to the OS while you are watching the app say the same thing.
+ *
+ * Beating a lift already raises a celebration in the page. Firing a system
+ * notification about it a half-second later, on the very phone that just
+ * showed it, is the fastest way to get notifications switched off altogether.
+ * So an event with a focused window is handed to that window instead.
+ *
+ * Scheduled reminders carry no `event` field and always show: the whole point
+ * of "you have not logged today" is that you are not in the app.
+ */
+async function deliver(data) {
+  if (data.event) {
+    const windows = await self.clients.matchAll({ type: 'window', includeUncontrolled: true });
+    const focused = windows.find((c) => c.focused) || windows.find((c) => c.visibilityState === 'visible');
+    if (focused) {
+      focused.postMessage({ type: 'gains-event', event: data.event, title: data.title, body: data.body, url: data.url || '/' });
+      return;
+    }
+  }
+
+  await self.registration.showNotification(data.title, {
+    body: data.body,
+    icon: '/icon-192.png',
+    badge: '/icon-192.png',
+    // Same tag replaces an older unread reminder instead of stacking three
+    // of them by Friday.
+    tag: data.tag || 'gains-log',
+    renotify: true,
+    data: { url: data.url || '/' },
+  });
+}
 
 self.addEventListener('notificationclick', (event) => {
   event.notification.close();

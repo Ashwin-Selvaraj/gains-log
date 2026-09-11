@@ -2,6 +2,7 @@
 
 import { Menu } from '@/components/Menu';
 import { ReminderToggle } from '@/components/ReminderToggle';
+import { EventToggles } from '@/components/EventToggles';
 
 /**
  * Notification settings, in the header beside the account menu.
@@ -32,6 +33,7 @@ export function NotificationMenu() {
         Notifications
       </p>
       <ReminderToggle chrome="plain" />
+      <EventToggles />
     </Menu>
   );
 }

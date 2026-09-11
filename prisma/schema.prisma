@@ -148,6 +148,12 @@ model Settings {
   /// Training sessions per week the plan is aiming for.
   weeklyWorkoutGoal Int    @default(5)
 
+  /// Which things worth knowing get pushed the moment they happen, as
+  /// comma-separated keys from EVENT_KINDS in src/lib/events.ts. Text rather
+  /// than a column per event so adding a fourth kind is not a migration —
+  /// the same reason muscleGroup and slot are text.
+  notifyEvents String @default("pr,goal,streak")
+
   /// Evening nudge if the day is still incomplete.
   reminderEnabled Boolean @default(false)
   /// "HH:MM" in the timezone below, not the server's.

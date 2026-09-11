@@ -3,6 +3,7 @@ import { prisma } from '@/lib/prisma';
 import { computePracticeStats } from '@/lib/practices';
 import { isDateKey, todayKey } from '@/lib/date';
 import { requireUser, unauthorized } from '@/lib/auth';
+import { emitEventInBackground, isStreakMilestone } from '@/lib/events';
 
 export const dynamic = 'force-dynamic';
 
@@ -50,8 +51,25 @@ export async function POST(req: Request, { params }: Params) {
   const dates = logs.map((l) => l.date);
   const today = todayKey();
 
-  return NextResponse.json({
-    done: dates.includes(date),
-    stats: computePracticeStats(dates, practice.startedOn, today),
-  });
+  const done = dates.includes(date);
+  const stats = computePracticeStats(dates, practice.startedOn, today);
+
+  // Only on the way up. Un-ticking a day and re-ticking it must not announce
+  // the same seven days twice — and the date guard in emitEvent covers the
+  // rest, since a streak can only reach a given milestone once per day.
+  if (done && isStreakMilestone(stats.current)) {
+    emitEventInBackground(user.id, {
+      kind: 'streak',
+      subject: `habit:${id}:${stats.current}`,
+      date,
+      title: `${stats.current} days of ${practice.name}`,
+      body:
+        stats.current >= stats.longest
+          ? 'Your longest run yet. Keep it.'
+          : `Best so far is ${stats.longest}.`,
+      url: '/',
+    });
+  }
+
+  return NextResponse.json({ done, stats });
 }

@@ -15,6 +15,7 @@ const display = Anton({
 });
 import { TabBar } from '@/components/TabBar';
 import { ServiceWorker } from '@/components/ServiceWorker';
+import { EventToasts } from '@/components/EventToasts';
 import { SyncBanner } from '@/components/SyncBanner';
 import { AppHeader } from '@/components/AppHeader';
 import { auth } from '@/lib/auth';
@@ -61,6 +62,7 @@ export default async function RootLayout({ children }: { children: React.ReactNo
       <body className="min-h-dvh antialiased">
         <Splash />
         <ServiceWorker />
+        <EventToasts />
         <SyncBanner />
         {signedIn && <AppHeader />}
         <main

@@ -42,6 +42,12 @@ export type PushPayload = {
   url?: string;
   /** Collapses older notifications with the same tag instead of stacking. */
   tag?: string;
+  /**
+   * Set for event pushes (see src/lib/events.ts). The service worker uses it
+   * to decide between an OS notification and handing the event to an already
+   * open page; absent means a scheduled reminder, which always shows.
+   */
+  event?: string;
 };
 
 /**

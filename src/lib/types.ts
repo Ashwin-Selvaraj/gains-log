@@ -158,6 +158,8 @@ export type Settings = {
   caloriesMin: number;
   caloriesMax: number;
   weeklyWorkoutGoal: number;
+  /** Comma-separated EVENT_KINDS keys — see src/lib/events.ts. */
+  notifyEvents: string;
   reminderEnabled: boolean;
   reminderTime: string;
   timezone: string;
