@@ -37,6 +37,31 @@ const sum = (items: EstimatedItem[]): Macros =>
     { kcal: 0, protein: 0, carbs: 0, fat: 0, fiber: 0 },
   );
 
+/**
+ * An estimated item plus the two things editing it needs.
+ *
+ * `base` is the estimate as it arrived and never changes, so every gram edit
+ * is computed from the original rather than from the last edit. Rescaling from
+ * the current value — what this used to do — divided by `item.grams`, which
+ * made 0 an absorbing state the row could never leave, and compounded the
+ * rounding of every previous edit into the next one.
+ *
+ * `draft` is what is actually in the text field. A number input cannot be
+ * controlled by a number: clearing it to type a new value leaves "" for a
+ * keystroke, and coercing that to 0 is what sent the row to zero in the first
+ * place.
+ */
+type Row = EstimatedItem & {
+  base: { grams: number; macros: Macros };
+  draft: string;
+};
+
+const toRow = (item: EstimatedItem): Row => ({
+  ...item,
+  base: { grams: item.grams, macros: item.macros },
+  draft: String(Math.round(item.grams)),
+});
+
 /** Mirrors the shape returned by /api/estimate/quota. */
 type Quota = {
   used: number;
@@ -50,7 +75,7 @@ export function PhotoEstimate({ date, onConfirm }: Props) {
   const cameraRef = useRef<HTMLInputElement>(null);
   const [photo, setPhoto] = useState<string | null>(null);
   const [estimate, setEstimate] = useState<Estimate | null>(null);
-  const [items, setItems] = useState<EstimatedItem[]>([]);
+  const [items, setItems] = useState<Row[]>([]);
   const [name, setName] = useState('');
   const [busy, setBusy] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -100,7 +125,7 @@ export function PhotoEstimate({ date, onConfirm }: Props) {
 
       const est = json as Estimate;
       setEstimate(est);
-      setItems(est.items);
+      setItems(est.items.map(toRow));
       setName(est.mealName);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Something went wrong');
@@ -109,25 +134,49 @@ export function PhotoEstimate({ date, onConfirm }: Props) {
     }
   }
 
-  /** Rescaling grams rescales that item's macros — they're linear in weight. */
-  function setGrams(index: number, nextGrams: number) {
+  /**
+   * Macros are linear in weight, so they are recomputed from the untouched
+   * original each time rather than scaled from the previous edit.
+   *
+   * `draft` is stored exactly as typed — including empty, and including the
+   * moment mid-edit when it reads "4" on the way to "40". Only a value that
+   * parses to a real number moves the macros; anything else leaves the last
+   * good numbers on screen until the field says something meaningful again.
+   */
+  function editGrams(index: number, draft: string) {
     setItems((prev) =>
       prev.map((item, i) => {
-        if (i !== index || item.grams <= 0) return item;
-        const factor = nextGrams / item.grams;
+        if (i !== index) return item;
+
+        const typed = Number(draft);
+        const usable = draft.trim() !== '' && Number.isFinite(typed) && typed > 0;
+        if (!usable) return { ...item, draft };
+
+        const grams = Math.min(typed, 5000);
+        const factor = item.base.grams > 0 ? grams / item.base.grams : 0;
         return {
           ...item,
-          grams: nextGrams,
-          portionLabel: `${Math.round(nextGrams)} g`,
+          draft,
+          grams,
+          portionLabel: `${Math.round(grams)} g`,
           macros: {
-            kcal: Math.round(item.macros.kcal * factor),
-            protein: Math.round(item.macros.protein * factor * 10) / 10,
-            carbs: Math.round(item.macros.carbs * factor * 10) / 10,
-            fat: Math.round(item.macros.fat * factor * 10) / 10,
-            fiber: Math.round(item.macros.fiber * factor * 10) / 10,
+            kcal: Math.round(item.base.macros.kcal * factor),
+            protein: Math.round(item.base.macros.protein * factor * 10) / 10,
+            carbs: Math.round(item.base.macros.carbs * factor * 10) / 10,
+            fat: Math.round(item.base.macros.fat * factor * 10) / 10,
+            fiber: Math.round(item.base.macros.fiber * factor * 10) / 10,
           },
         };
       }),
+    );
+  }
+
+  /** Puts the number back in an emptied field, so nothing is left blank. */
+  function commitGrams(index: number) {
+    setItems((prev) =>
+      prev.map((item, i) =>
+        i === index ? { ...item, draft: String(Math.round(item.grams)) } : item,
+      ),
     );
   }
 
@@ -322,8 +371,10 @@ export function PhotoEstimate({ date, onConfirm }: Props) {
                 <input
                   className="field w-20 shrink-0 px-2 text-center text-sm"
                   inputMode="numeric"
-                  value={String(Math.round(item.grams))}
-                  onChange={(e) => setGrams(i, Number(e.target.value) || 0)}
+                  value={item.draft}
+                  onChange={(e) => editGrams(i, e.target.value)}
+                  onBlur={() => commitGrams(i)}
+                  onFocus={(e) => e.currentTarget.select()}
                   aria-label={`Grams of ${item.matchedName ?? item.name}`}
                 />
                 <span className="shrink-0 text-xs text-muted">g</span>
