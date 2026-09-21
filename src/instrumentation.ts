@@ -7,7 +7,24 @@
  * version of this feature could only fire while the app was already open.
  */
 
-const POLL_MS = 5 * 60 * 1000;
+/**
+ * Wide enough to leave real idle time between ticks, not just "reasonably
+ * responsive."
+ *
+ * Every tick touches Neon regardless of whether anything is due — the first
+ * query in runRemindersForAllUsers() is unconditional. Neon's free tier
+ * suspends its compute (and stops billing) after a few minutes of inactivity;
+ * at 5 minutes between ticks, that DB touch was landing close enough to the
+ * suspend timer to keep resetting it, so the database effectively never slept
+ * for 20 days straight. That alone accounted for a large share of a 100-hour
+ * monthly compute budget being spent by day 20 — see the incident this fixes.
+ *
+ * 20 minutes comfortably clears any plausible auto-suspend delay, giving the
+ * database real gaps to actually go idle between wakes, while still landing
+ * well inside the 90-minute WINDOW_MINUTES tolerance below — a reminder due
+ * right after a tick is still caught by the next one, or the one after that.
+ */
+const POLL_MS = 20 * 60 * 1000;
 
 export async function register() {
   // Only the Node.js runtime; the Edge runtime has no timers that outlive a
@@ -28,7 +45,7 @@ export async function register() {
    *
    * A cron that fires at exactly 21:00 loses the day's reminder if the process
    * happens to be restarting at 21:00 — which is precisely when a deploy tends
-   * to happen. Polling every five minutes and asking "is it past the time, and
+   * to happen. Polling on an interval and asking "is it past the time, and
    * have I not sent yet?" survives restarts, clock drift and daylight-saving
    * shifts alike. The (kind, date) unique index makes the double-check free.
    */
