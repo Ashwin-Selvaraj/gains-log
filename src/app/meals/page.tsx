@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react';
 import { mutate } from '@/lib/sync';
 import { SkeletonBlock } from '@/components/Skeleton';
 import { FoodPicker } from '@/components/FoodPicker';
+import { MealHistory } from '@/components/MealHistory';
 import { describePortion, macrosFor, sumMacros } from '@/lib/nutrition';
 import type { Food, Macros, Preset } from '@/lib/types';
 
@@ -12,7 +13,7 @@ type DraftItem = { foodId: string; name: string; grams: number };
 const EMPTY: Macros = { kcal: 0, protein: 0, carbs: 0, fat: 0, fiber: 0 };
 
 export default function MealsPage() {
-  const [tab, setTab] = useState<'presets' | 'foods'>('presets');
+  const [tab, setTab] = useState<'presets' | 'foods' | 'history'>('presets');
   const [presets, setPresets] = useState<Preset[] | null>(null);
 
   useEffect(() => {
@@ -27,13 +28,13 @@ export default function MealsPage() {
       <header className="mb-4">
         <h1 className="text-2xl font-bold tracking-tight">Foods</h1>
         <p className="text-sm text-muted">
-          Your saved combos and the food table they&apos;re built from. Log what you
-          actually ate on Today.
+          Your saved combos, the food table they&apos;re built from, and everything
+          you&apos;ve eaten. Log what you actually ate on Today.
         </p>
       </header>
 
       <div className="mb-4 flex gap-2">
-        {(['presets', 'foods'] as const).map((t) => (
+        {(['presets', 'foods', 'history'] as const).map((t) => (
           <button
             key={t}
             type="button"
@@ -46,16 +47,14 @@ export default function MealsPage() {
                             : 'border-line bg-card text-muted'
                         }`}
           >
-            {t === 'presets' ? 'My combos' : 'Food table'}
+            {t === 'presets' ? 'My combos' : t === 'foods' ? 'Food table' : 'History'}
           </button>
         ))}
       </div>
 
-      {tab === 'presets' ? (
-        <PresetsTab presets={presets} setPresets={setPresets} />
-      ) : (
-        <FoodsTab />
-      )}
+      {tab === 'presets' && <PresetsTab presets={presets} setPresets={setPresets} />}
+      {tab === 'foods' && <FoodsTab />}
+      {tab === 'history' && <MealHistory />}
     </>
   );
 }

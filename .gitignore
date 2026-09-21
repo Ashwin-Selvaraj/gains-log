@@ -4,10 +4,13 @@ out/
 build/
 .DS_Store
 
-# Local env — never commit
+# Local env — never commit.
+# The broad .env.* catches backups like .env.neon-backup, which the narrower
+# .env*.local missed — a credentials file one `git add -A` away from being
+# committed. .env.example is the one that is meant to be tracked.
 .env
-.env.local
-.env*.local
+.env.*
+!.env.example
 
 # Local SQLite database
 prisma/dev.db
