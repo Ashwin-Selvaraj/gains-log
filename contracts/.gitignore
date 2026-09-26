@@ -1,0 +1,17 @@
+node_modules/
+artifacts/
+cache/
+typechain-types/
+dist/
+
+# Local env — the deployer key lives here.
+.env
+.env.*
+!.env.example
+
+# Local-chain deploys are throwaway; a real network's record is worth keeping.
+deployments/hardhat.json
+deployments/localhost.json
+
+# Real log batches are personal data. The example stays.
+scripts/logs.json

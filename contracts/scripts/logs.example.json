@@ -1,0 +1,5 @@
+[
+  { "user": "0x70997970C51812dc3A010C7d01b50e0d17dc79C8", "logId": "clog000000000000000000001", "kind": "set",  "value": 5000, "timestamp": 1758412800 },
+  { "user": "0x70997970C51812dc3A010C7d01b50e0d17dc79C8", "logId": "clog000000000000000000002", "kind": "meal", "value": 650,  "timestamp": 1758416400 },
+  { "user": "0x70997970C51812dc3A010C7d01b50e0d17dc79C8", "logId": "clog000000000000000000003", "kind": "set",  "value": 4200, "timestamp": 1758499200 }
+]
