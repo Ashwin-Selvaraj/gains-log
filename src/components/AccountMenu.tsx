@@ -60,6 +60,9 @@ export async function AccountMenu() {
       <Link href="/goals" className={item}>
         Goals &amp; targets
       </Link>
+      <Link href="/stake" className={item}>
+        Staked goals
+      </Link>
       {user.isAdmin && (
         <Link href="/admin" className={item}>
           Manage access

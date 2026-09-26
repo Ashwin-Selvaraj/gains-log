@@ -12,17 +12,20 @@
     "db:push": "node scripts/set-db-provider.mjs && prisma db push",
     "db:studio": "node scripts/set-db-provider.mjs && prisma studio",
     "db:seed": "node scripts/set-db-provider.mjs && prisma generate && node --experimental-strip-types prisma/seed.ts",
-    "push:keys": "node scripts/generate-vapid-keys.mjs"
+    "push:keys": "node scripts/generate-vapid-keys.mjs",
+    "check:merkle": "node --experimental-strip-types scripts/check-merkle-parity.ts"
   },
   "dependencies": {
     "@auth/prisma-adapter": "^2.11.3",
     "@aws-sdk/client-s3": "^3.1124.0",
+    "@openzeppelin/merkle-tree": "^1.0.8",
     "@prisma/client": "^6.19.3",
     "heic-to": "^1.5.2",
     "next": "^16.3.2",
     "next-auth": "^5.0.0-beta.32",
     "react": "^19.1.1",
     "react-dom": "^19.1.1",
+    "viem": "^2.56.9",
     "web-push": "^3.6.7"
   },
   "devDependencies": {
