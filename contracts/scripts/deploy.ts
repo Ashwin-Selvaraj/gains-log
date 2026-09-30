@@ -21,8 +21,11 @@ const INITIAL_MINT = ethers.parseEther(process.env.INITIAL_MINT ?? '10000');
 
 async function main() {
   const [deployer] = await ethers.getSigners();
-  const admin = process.env.ADMIN_ADDRESS ?? deployer.address;
-  const treasury = process.env.TREASURY_ADDRESS ?? admin;
+  // `||` rather than `??`: an unset var still comes through as "" from a
+  // checked-in .env.example, which `??` would happily pass to ethers as an
+  // address and have it try (and fail) to resolve as an ENS name.
+  const admin = process.env.ADMIN_ADDRESS || deployer.address;
+  const treasury = process.env.TREASURY_ADDRESS || admin;
 
   console.log(`network:  ${network.name}`);
   console.log(`deployer: ${deployer.address}`);

@@ -7,10 +7,12 @@
  *
  * Everything here is NEXT_PUBLIC_ because the browser needs it to talk to the
  * chain. That is safe — addresses are public by definition. Nothing secret
- * belongs in this file; the verifier's key stays server-side in VERIFIER_PRIVATE_KEY.
+ * belongs in this file; the verifier's key stays server-side, resolved by
+ * signer.ts from SIGNER_MODE (a raw env key, or an AWS KMS key that never
+ * leaves KMS).
  */
 
-export const CHAIN_ID = Number(process.env.NEXT_PUBLIC_CHAIN_ID ?? 11155111);
+export const CHAIN_ID = Number(process.env.NEXT_PUBLIC_CHAIN_ID ?? 97);
 
 export const ADDRESSES = {
   goalToken: process.env.NEXT_PUBLIC_GOAL_TOKEN_ADDRESS ?? '',
@@ -31,6 +33,8 @@ export const chainConfigured = Boolean(
 
 /** Human name for the network, for the one place the UI has to say it. */
 export function chainName(id: number = CHAIN_ID): string {
+  if (id === 97) return 'BSC Testnet';
+  if (id === 56) return 'BNB Smart Chain';
   if (id === 11155111) return 'Sepolia';
   if (id === 31337) return 'Local chain';
   if (id === 1) return 'Ethereum';

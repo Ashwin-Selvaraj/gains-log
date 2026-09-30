@@ -8,7 +8,7 @@ import {
   type Address,
   type EIP1193Provider,
 } from 'viem';
-import { sepolia, hardhat, mainnet } from 'viem/chains';
+import { sepolia, hardhat, mainnet, bsc, bscTestnet } from 'viem/chains';
 import { CHAIN_ID, ADDRESSES } from '@/lib/chain/config';
 
 /**
@@ -21,8 +21,8 @@ import { CHAIN_ID, ADDRESSES } from '@/lib/chain/config';
  * is the right trade while staking is one optional screen.
  */
 
-const CHAINS = { 1: mainnet, 11155111: sepolia, 31337: hardhat } as const;
-export const chain = CHAINS[CHAIN_ID as keyof typeof CHAINS] ?? sepolia;
+const CHAINS = { 1: mainnet, 56: bsc, 97: bscTestnet, 11155111: sepolia, 31337: hardhat } as const;
+export const chain = CHAINS[CHAIN_ID as keyof typeof CHAINS] ?? bscTestnet;
 
 export const publicClient = createPublicClient({ chain, transport: http() });
 

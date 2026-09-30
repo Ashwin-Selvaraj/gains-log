@@ -7,7 +7,8 @@ import * as dotenv from 'dotenv';
 // never see a deployer private key.
 dotenv.config();
 
-const { SEPOLIA_RPC_URL, DEPLOYER_PRIVATE_KEY, ETHERSCAN_API_KEY } = process.env;
+const { SEPOLIA_RPC_URL, BSC_TESTNET_RPC_URL, DEPLOYER_PRIVATE_KEY, ETHERSCAN_API_KEY, BSCSCAN_API_KEY } =
+  process.env;
 
 const config: HardhatUserConfig = {
   solidity: {
@@ -29,9 +30,21 @@ const config: HardhatUserConfig = {
           },
         }
       : {}),
+    ...(BSC_TESTNET_RPC_URL && DEPLOYER_PRIVATE_KEY
+      ? {
+          bscTestnet: {
+            url: BSC_TESTNET_RPC_URL,
+            accounts: [DEPLOYER_PRIVATE_KEY],
+            chainId: 97,
+          },
+        }
+      : {}),
   },
   etherscan: {
-    apiKey: ETHERSCAN_API_KEY ?? '',
+    apiKey: {
+      sepolia: ETHERSCAN_API_KEY ?? '',
+      bscTestnet: BSCSCAN_API_KEY ?? '',
+    },
   },
   gasReporter: {
     enabled: process.env.REPORT_GAS === 'true',

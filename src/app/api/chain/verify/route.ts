@@ -65,7 +65,7 @@ export async function POST(req: Request) {
     );
   }
 
-  const wallet = verifierClient();
+  const wallet = await verifierClient();
   if (!wallet) {
     return NextResponse.json({ error: 'Verifier key unavailable.' }, { status: 501 });
   }

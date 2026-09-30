@@ -1,0 +1,19 @@
+{
+  "network": "bscTestnet",
+  "chainId": 97,
+  "deployedAt": "2026-09-30T07:31:47.678Z",
+  "admin": "0x8358847c2D38F97F2Fc20cfA83F61075C4BfD14A",
+  "treasury": "0x8358847c2D38F97F2Fc20cfA83F61075C4BfD14A",
+  "contracts": {
+    "GoalToken": "0xB6f868482542D1AD8644363293f9413Ab58f4aB0",
+    "GoalManager": "0xC0b367ACcd82E360343F46BE562d40018eBe3C03",
+    "LogAnchor": "0x834Ba8f51F77168184465799E5D0E8b1DCE22FDf",
+    "BuybackBurn": "0x016EA30c0f25555e4142e4B9bD41a3afE00A9dBf",
+    "SwapRouter": "0xD99D1c33F9fC3444f8101754aBC46c52416550D1"
+  },
+  "config": {
+    "cap": "1000000000000000000000000",
+    "platformFeeBps": 1000,
+    "rewardRateBps": 2000
+  }
+}
