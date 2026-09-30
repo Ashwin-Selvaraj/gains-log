@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
-import { MUSCLE_GROUPS, muscleGroupLabel } from '@/lib/exercises';
+import { MUSCLE_GROUPS, guessMuscleGroup, muscleGroupLabel } from '@/lib/exercises';
 import { ExerciseThumb } from '@/components/ExerciseThumb';
 
 type LibraryEntry = {
@@ -10,6 +10,8 @@ type LibraryEntry = {
   nameKey: string;
   muscleGroup: string;
   custom: boolean;
+  /** One of the last few things this user logged — shown first when nothing is typed. */
+  recent: boolean;
   /** "" when the exercise has no picture — see ExerciseThumb for the fallback. */
   imageUrl: string;
 };
@@ -40,7 +42,10 @@ export function ExercisePicker({
   const [exactMatch, setExactMatch] = useState(false);
   const [loading, setLoading] = useState(false);
   const [adding, setAdding] = useState(false);
-  const [newGroup, setNewGroup] = useState<string>(muscle ?? 'chest');
+  // Empty until guessed or chosen. It used to default to "chest", so a new
+  // shoulder lift added in a hurry was quietly filed under Chest — and then
+  // never appeared in a shoulders-focused list again.
+  const [chosenGroup, setChosenGroup] = useState<string>('');
   const [error, setError] = useState<string | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
@@ -86,6 +91,7 @@ export function ExercisePicker({
    * anything matches, pick from it; type the full name to get this option.
    */
   const canAdd = typed.length > 1 && !exactMatch && !loading && results.length === 0;
+  const newGroup = chosenGroup || muscle || guessMuscleGroup(typed) || '';
 
   async function addNew() {
     setAdding(true);
@@ -141,10 +147,13 @@ export function ExercisePicker({
                   name={ex.name}
                   size={36}
                 />
-                <span className="min-w-0 flex-1 truncate text-sm font-medium">{ex.name}</span>
-                <span className="shrink-0 text-xs text-muted">
-                  {ex.custom && <span className="mr-1">yours ·</span>}
-                  {muscleGroupLabel(ex.muscleGroup)}
+                <span className="min-w-0 flex-1">
+                  <span className="block truncate text-sm font-medium">{ex.name}</span>
+                  <span className="block text-xs text-muted">
+                    {ex.recent && !typed && <span className="text-accent">Recent · </span>}
+                    {ex.custom && 'Yours · '}
+                    {muscleGroupLabel(ex.muscleGroup)}
+                  </span>
                 </span>
               </button>
             </li>
@@ -169,8 +178,13 @@ export function ExercisePicker({
               className="field"
               aria-label="Muscle group for the new exercise"
               value={newGroup}
-              onChange={(e) => setNewGroup(e.target.value)}
+              onChange={(e) => setChosenGroup(e.target.value)}
             >
+              {!newGroup && (
+                <option value="" disabled>
+                  Which muscle group?
+                </option>
+              )}
               {MUSCLE_GROUPS.map((g) => (
                 <option key={g.key} value={g.key}>
                   {g.label}
@@ -181,7 +195,7 @@ export function ExercisePicker({
               type="button"
               className="btn-primary shrink-0"
               onClick={() => void addNew()}
-              disabled={adding}
+              disabled={adding || !newGroup}
             >
               {adding ? 'Adding…' : 'Add & log'}
             </button>

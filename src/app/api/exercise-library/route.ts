@@ -41,13 +41,36 @@ export async function GET(req: Request) {
     select: { id: true, name: true, nameKey: true, muscleGroup: true, aliases: true, userId: true },
   });
 
+  // With nothing typed, what you logged most recently comes first: the lift
+  // you did last shoulder day is the one you're about to look for.
+  const recentRank = new Map<string, number>();
+  if (!q) {
+    // groupBy, not findMany + distinct: Prisma applies `take` before it
+    // de-duplicates, so the 8 newest *sets* — usually one lift's worth —
+    // collapsed to a single "recent" exercise.
+    const recent = await prisma.workoutSet.groupBy({
+      by: ['exerciseKey'],
+      where: { userId: user.id, exerciseKey: { not: '' } },
+      _max: { createdAt: true },
+      orderBy: { _max: { createdAt: 'desc' } },
+      take: 8,
+    });
+    recent.forEach((r, i) => recentRank.set(r.exerciseKey, i));
+  }
+
   // Ranked in memory rather than with a SQL LIKE: the catalogue is a few
   // hundred rows at most, and scoring here means prefix matches can outrank
   // substring ones — "row" should offer "Rowing machine" before "Barbell row".
+  const rankOf = (key: string) => recentRank.get(key) ?? Infinity;
   const top = rows
     .map((row) => ({ row, score: scoreMatch(q, row) }))
     .filter((r) => r.score > 0)
-    .sort((a, b) => b.score - a.score || a.row.name.localeCompare(b.row.name))
+    .sort(
+      (a, b) =>
+        rankOf(a.row.nameKey) - rankOf(b.row.nameKey) ||
+        b.score - a.score ||
+        a.row.name.localeCompare(b.row.name),
+    )
     .slice(0, 40)
     .map(({ row }) => row);
 
@@ -65,6 +88,7 @@ export async function GET(req: Request) {
     muscleGroup: row.muscleGroup,
     /** True for the user's own additions, so the UI can mark them. */
     custom: row.userId !== null,
+    recent: recentRank.has(row.nameKey),
     /** "" when there's no picture — the UI falls back to the muscle icon. */
     imageUrl: images.get(row.nameKey) ?? '',
   }));

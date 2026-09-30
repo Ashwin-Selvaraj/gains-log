@@ -35,6 +35,27 @@ export function nameKeyOf(name: string): string {
   return name.trim().toLowerCase().replace(/\s+/g, ' ');
 }
 
+/** Gym shorthand, expanded so "db shoulder press" and "dumbbell shoulder press" are one query. */
+const SHORTHAND: Record<string, string> = {
+  db: 'dumbbell',
+  dbs: 'dumbbell',
+  bb: 'barbell',
+  kb: 'kettlebell',
+  ez: 'ez-bar',
+};
+
+function words(text: string): string[] {
+  return nameKeyOf(text)
+    .split(/[\s,/()-]+/)
+    .filter(Boolean)
+    .map((w) => SHORTHAND[w] ?? w);
+}
+
+/** Every query word is the start of some word in `target`, in any order. */
+function allWordsMatch(queryWords: string[], targetWords: string[]): boolean {
+  return queryWords.every((q) => targetWords.some((t) => t.startsWith(q)));
+}
+
 /**
  * Ranks a catalogue row against a typed query.
  *
@@ -42,6 +63,11 @@ export function nameKeyOf(name: string): string {
  * ones so typing "row" surfaces "Row" and "Rowing" above "Barbell row" — the
  * thing you're most likely reaching for is the one that starts the way you
  * started typing.
+ *
+ * Word order is ignored past the exact/prefix tiers. People say "shoulder
+ * dumbbell press" as often as "dumbbell shoulder press"; matching only the
+ * stored order returned nothing for the first, and the picker then offered to
+ * create it as a brand-new exercise — splitting that lift's history in two.
  */
 export function scoreMatch(
   query: string,
@@ -54,13 +80,40 @@ export function scoreMatch(
   if (name === q) return 100;
   if (name.startsWith(q)) return 80;
 
-  // A word inside the name — "bench" finding "Incline bench press".
-  if (name.split(' ').some((w) => w.startsWith(q))) return 60;
-  if (name.includes(q)) return 40;
+  const aliasList = row.aliases.toLowerCase().split(',').map((a) => a.trim()).filter(Boolean);
+  if (aliasList.includes(q)) return 70;
 
-  const aliases = row.aliases.toLowerCase();
-  if (aliases.split(',').some((a) => a.trim() === q)) return 70;
-  if (aliases.includes(q)) return 30;
+  const qWords = words(q);
+  const nameWords = words(row.name);
+  if (allWordsMatch(qWords, nameWords)) {
+    // Same words, same count: a reordering of the full name.
+    return qWords.length === nameWords.length ? 90 : 60;
+  }
+  if (aliasList.some((a) => allWordsMatch(qWords, words(a)))) return 50;
+  if (name.includes(q)) return 40;
+  // Spread across name and aliases — "seated shoulder press" where "seated"
+  // only appears in an alias.
+  if (allWordsMatch(qWords, [...nameWords, ...aliasList.flatMap(words)])) return 30;
 
   return 0;
+}
+
+const GROUP_HINTS: [MuscleGroupKey, string[]][] = [
+  ['shoulders', ['shoulder', 'delt', 'lateral', 'overhead', 'military', 'arnold', 'shrug']],
+  ['chest', ['chest', 'bench', 'pec', 'fly', 'push-up', 'pushup']],
+  ['back', ['back', 'row', 'pull', 'lat', 'deadlift', 'chin']],
+  ['arms', ['curl', 'bicep', 'tricep', 'triceps', 'biceps', 'skull', 'forearm', 'hammer']],
+  ['legs', ['squat', 'leg', 'lunge', 'calf', 'quad', 'hamstring']],
+  ['glutes', ['glute', 'hip', 'thrust', 'bridge', 'kickback']],
+  ['core', ['ab', 'abs', 'core', 'plank', 'crunch', 'oblique']],
+  ['cardio', ['run', 'bike', 'cycle', 'treadmill', 'rowing', 'elliptical', 'walk', 'swim']],
+];
+
+/** Best guess at a muscle group from a new exercise's name, or null to make the user choose. */
+export function guessMuscleGroup(name: string): MuscleGroupKey | null {
+  const ws = words(name);
+  for (const [group, hints] of GROUP_HINTS) {
+    if (ws.some((w) => hints.some((h) => w.startsWith(h)))) return group;
+  }
+  return null;
 }
