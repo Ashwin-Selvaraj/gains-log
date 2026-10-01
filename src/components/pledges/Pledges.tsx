@@ -24,6 +24,8 @@ import { outcomes } from '@/lib/chain/pledge-math';
 import { SkeletonBlock } from '@/components/Skeleton';
 import { PledgeCard, fmtGoal, titleOf, type Pledge, type Rates } from '@/components/pledges/PledgeCard';
 import { PledgeComposer, type Baseline } from '@/components/pledges/PledgeComposer';
+import { Rewards, type RewardsData } from '@/components/pledges/Rewards';
+import { todayKey } from '@/lib/date';
 
 const FAUCET_URL = 'https://www.bnbchain.org/en/testnet-faucet';
 /** Enough native coin for a handful of transactions on BSC Testnet. */
@@ -55,8 +57,15 @@ export function Pledges() {
   const [rates, setRates] = useState<Rates | null>(null);
   const [starter, setStarter] = useState<{ available: boolean; amount: number } | null>(null);
   const [composing, setComposing] = useState(false);
+  const [view, setView] = useState<'pledges' | 'earn'>('pledges');
+  const [rewards, setRewards] = useState<RewardsData | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
   const [toast, setToast] = useState<Toast>(null);
+
+  const loadRewards = useCallback(async () => {
+    const res = await fetch(`/api/rewards?today=${todayKey()}`);
+    if (res.ok) setRewards((await res.json()) as RewardsData);
+  }, []);
 
   const loadPledges = useCallback(async () => {
     const res = await fetch('/api/chain/goals');
@@ -89,6 +98,7 @@ export function Pledges() {
   useEffect(() => {
     void waitForWallet().then(setInstalled);
     void loadPledges();
+    void loadRewards();
     fetch('/api/chain/link-wallet')
       .then((r) => r.json())
       .then((d: { address: string | null }) => setLinked(d.address))
@@ -107,7 +117,7 @@ export function Pledges() {
     ])
       .then(([rewardBps, feeBps]) => setRates({ rewardBps, feeBps }))
       .catch(() => {});
-  }, [loadPledges]);
+  }, [loadPledges, loadRewards]);
 
   // Restore an already-authorised wallet without a popup, and follow the
   // wallet if the user switches account or network in it.
@@ -222,7 +232,7 @@ export function Pledges() {
       } else {
         setToast({ tone: 'err', text: json.error ?? `Not yet: ${json.verdict?.detail ?? 'target not reached.'}` });
       }
-      await Promise.all([loadPledges(), refreshWallet(address)]);
+      await Promise.all([loadPledges(), loadRewards(), refreshWallet(address)]);
     });
 
   // Anyone may close a pledge once its deadline passes; doing it from your own
@@ -241,7 +251,7 @@ export function Pledges() {
       });
       await publicClient.waitForTransactionReceipt({ hash });
       setToast({ tone: 'ok', text: 'Pledge closed and the rest of your stake returned. Next one.' });
-      await Promise.all([loadPledges(), refreshWallet(address)]);
+      await Promise.all([loadPledges(), loadRewards(), refreshWallet(address)]);
     });
 
   // ── Derived ─────────────────────────────────────────────────────────────
@@ -331,136 +341,178 @@ export function Pledges() {
         )}
       </section>
 
-      {/* ── Getting set up (only the next missing step) ───────────────── */}
-      {!ready && (
-        <SetupStep
-          next={next!}
-          busy={busy}
-          starter={starter}
-          gasSymbol={chain.nativeCurrency.symbol}
-          networkName={chain.name}
-          walletPresent={!!address}
-          mobile={isMobileDevice()}
-          progress={steps.findIndex((s) => !s.done)}
-          total={steps.length}
-          onConnect={() => void onConnect()}
-          onSwitch={() => void onSwitch()}
-          onStarter={() => void onStarter()}
-          onRecheck={() => void refreshWallet(address)}
+      {/* Pledges risk GOAL; quests pay it out. Same tab, two jobs. */}
+      <div role="tablist" aria-label="Pledges or rewards" className="grid grid-cols-2 gap-1 rounded-xl bg-line/60 p-1">
+        {(['pledges', 'earn'] as const).map((v) => {
+          const on = view === v;
+          const waiting = v === 'earn' ? (rewards?.quests.filter((q) => q.claimable.length > 0).length ?? 0) : 0;
+          return (
+            <button
+              key={v}
+              type="button"
+              role="tab"
+              aria-selected={on}
+              onClick={() => setView(v)}
+              className={`flex items-center justify-center gap-1.5 rounded-lg py-2 text-sm font-semibold transition ${
+                on ? 'bg-card text-ink shadow-sm' : 'text-muted'
+              }`}
+            >
+              <span aria-hidden>{v === 'pledges' ? '🎯' : '🏆'}</span>
+              {v === 'pledges' ? 'Pledges' : 'Earn GOAL'}
+              {waiting > 0 && (
+                <span className="rounded-full bg-accent px-1.5 text-[11px] font-bold leading-5 text-white">
+                  {waiting}
+                </span>
+              )}
+            </button>
+          );
+        })}
+      </div>
+
+      {view === 'earn' && (
+        <Rewards
+          data={rewards}
+          onChanged={async (message) => {
+            if (message) setToast({ tone: 'ok', text: message });
+            await Promise.all([loadRewards(), refreshWallet(address)]);
+          }}
         />
       )}
 
-      {/* ── Am I going to make it ─────────────────────────────────────── */}
-      <section aria-label="Active pledges">
-        <div className="mb-2 flex items-baseline justify-between">
-          <h2 className="text-base font-semibold">
-            Active{active.length > 0 && <span className="ml-1.5 text-muted">{active.length}</span>}
-          </h2>
-        </div>
+      {view === 'pledges' && (
+        <>
+        {/* ── Getting set up (only the next missing step) ───────────────── */}
+        {!ready && (
+          <SetupStep
+            next={next!}
+            busy={busy}
+            starter={starter}
+            gasSymbol={chain.nativeCurrency.symbol}
+            networkName={chain.name}
+            walletPresent={!!address}
+            mobile={isMobileDevice()}
+            progress={steps.findIndex((s) => !s.done)}
+            total={steps.length}
+            onConnect={() => void onConnect()}
+            onSwitch={() => void onSwitch()}
+            onStarter={() => void onStarter()}
+            onRecheck={() => void refreshWallet(address)}
+          />
+        )}
 
-        {active.length === 0 && !composing && (
-          <div className="card text-center">
-            <p className="text-3xl" aria-hidden>
-              🎯
-            </p>
-            <p className="mt-1 text-sm font-semibold">No live pledges</p>
-            <p className="mx-auto mt-1 max-w-xs text-xs text-muted">
-              Put a few GOAL behind a goal you&apos;d otherwise let slide. Hit it and earn{' '}
-              {rates ? `${rates.rewardBps / 100}%` : 'a reward'}; miss it and you still get most of it back.
-            </p>
+        {/* ── Am I going to make it ─────────────────────────────────────── */}
+        <section aria-label="Active pledges">
+          <div className="mb-2 flex items-baseline justify-between">
+            <h2 className="text-base font-semibold">
+              Active{active.length > 0 && <span className="ml-1.5 text-muted">{active.length}</span>}
+            </h2>
           </div>
+
+          {active.length === 0 && !composing && (
+            <div className="card text-center">
+              <p className="text-3xl" aria-hidden>
+                🎯
+              </p>
+              <p className="mt-1 text-sm font-semibold">No live pledges</p>
+              <p className="mx-auto mt-1 max-w-xs text-xs text-muted">
+                Put a few GOAL behind a goal you&apos;d otherwise let slide. Hit it and earn{' '}
+                {rates ? `${rates.rewardBps / 100}%` : 'a reward'}; miss it and you still get most of it back.
+              </p>
+            </div>
+          )}
+
+          {active.length > 0 && (
+            <ul className="space-y-3">
+              {active.map((p) => (
+                <PledgeCard
+                  key={p.id}
+                  pledge={p}
+                  rates={rates}
+                  busy={busy === `pledge-${p.goalId}`}
+                  onClaim={() => void onClaim(p)}
+                  onSettle={() => void onSettle(p)}
+                />
+              ))}
+            </ul>
+          )}
+        </section>
+
+        {/* ── How do I start one ────────────────────────────────────────── */}
+        {composing && address && balance !== null ? (
+          <PledgeComposer
+            address={address}
+            balance={balance}
+            baseline={baseline}
+            rates={rates}
+            onCancel={() => setComposing(false)}
+            onDone={async (message) => {
+              setComposing(false);
+              setToast({ tone: 'ok', text: message });
+              await Promise.all([loadPledges(), loadRewards(), refreshWallet(address)]);
+            }}
+          />
+        ) : (
+          <button
+            type="button"
+            className="btn-primary w-full"
+            disabled={!ready}
+            onClick={() => {
+              setToast(null);
+              setComposing(true);
+            }}
+          >
+            {ready ? '+ New pledge' : 'Finish setup to make a pledge'}
+          </button>
         )}
 
-        {active.length > 0 && (
-          <ul className="space-y-3">
-            {active.map((p) => (
-              <PledgeCard
-                key={p.id}
-                pledge={p}
-                rates={rates}
-                busy={busy === `pledge-${p.goalId}`}
-                onClaim={() => void onClaim(p)}
-                onSettle={() => void onSettle(p)}
-              />
-            ))}
-          </ul>
+        {/* ── History ───────────────────────────────────────────────────── */}
+        {past.length > 0 && (
+          <details className="card group">
+            <summary className="flex cursor-pointer list-none items-center justify-between text-sm font-semibold">
+              Past pledges
+              <span className="text-xs font-normal text-muted group-open:hidden">
+                {won} won · {past.length - won} missed ▾
+              </span>
+            </summary>
+            <ul className="mt-3 divide-y divide-line">
+              {past.map((p) => {
+                const tx = p.txHash ? explorerUrl('tx', p.txHash) : null;
+                const ok = p.status === 'Succeeded';
+                return (
+                  <li key={p.id} className="flex items-center gap-3 py-2.5 text-sm">
+                    <span
+                      aria-hidden
+                      className={`flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-xs font-bold ${
+                        ok ? 'bg-accent/15 text-accent' : 'bg-line text-muted'
+                      }`}
+                    >
+                      {ok ? '✓' : '–'}
+                    </span>
+                    <div className="min-w-0 flex-1">
+                      <p className="truncate font-medium">{titleOf(p)}</p>
+                      <p className="text-xs text-muted">
+                        {p.progress.actual.toLocaleString()} / {p.target.toLocaleString()} ·{' '}
+                        {new Date(p.deadline).toLocaleDateString()}
+                      </p>
+                    </div>
+                    <span className={`shrink-0 text-xs font-semibold ${ok ? 'text-accent' : 'text-muted'}`}>
+                      {ok ? 'Won' : 'Missed'}
+                    </span>
+                    {tx && (
+                      <a href={tx} target="_blank" rel="noreferrer" className="shrink-0 text-xs text-muted" aria-label="View on block explorer">
+                        ↗
+                      </a>
+                    )}
+                  </li>
+                );
+              })}
+            </ul>
+          </details>
         )}
-      </section>
 
-      {/* ── How do I start one ────────────────────────────────────────── */}
-      {composing && address && balance !== null ? (
-        <PledgeComposer
-          address={address}
-          balance={balance}
-          baseline={baseline}
-          rates={rates}
-          onCancel={() => setComposing(false)}
-          onDone={async (message) => {
-            setComposing(false);
-            setToast({ tone: 'ok', text: message });
-            await Promise.all([loadPledges(), refreshWallet(address)]);
-          }}
-        />
-      ) : (
-        <button
-          type="button"
-          className="btn-primary w-full"
-          disabled={!ready}
-          onClick={() => {
-            setToast(null);
-            setComposing(true);
-          }}
-        >
-          {ready ? '+ New pledge' : 'Finish setup to make a pledge'}
-        </button>
+        <HowItWorks rates={rates} />
+        </>
       )}
-
-      {/* ── History ───────────────────────────────────────────────────── */}
-      {past.length > 0 && (
-        <details className="card group">
-          <summary className="flex cursor-pointer list-none items-center justify-between text-sm font-semibold">
-            Past pledges
-            <span className="text-xs font-normal text-muted group-open:hidden">
-              {won} won · {past.length - won} missed ▾
-            </span>
-          </summary>
-          <ul className="mt-3 divide-y divide-line">
-            {past.map((p) => {
-              const tx = p.txHash ? explorerUrl('tx', p.txHash) : null;
-              const ok = p.status === 'Succeeded';
-              return (
-                <li key={p.id} className="flex items-center gap-3 py-2.5 text-sm">
-                  <span
-                    aria-hidden
-                    className={`flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-xs font-bold ${
-                      ok ? 'bg-accent/15 text-accent' : 'bg-line text-muted'
-                    }`}
-                  >
-                    {ok ? '✓' : '–'}
-                  </span>
-                  <div className="min-w-0 flex-1">
-                    <p className="truncate font-medium">{titleOf(p)}</p>
-                    <p className="text-xs text-muted">
-                      {p.progress.actual.toLocaleString()} / {p.target.toLocaleString()} ·{' '}
-                      {new Date(p.deadline).toLocaleDateString()}
-                    </p>
-                  </div>
-                  <span className={`shrink-0 text-xs font-semibold ${ok ? 'text-accent' : 'text-muted'}`}>
-                    {ok ? 'Won' : 'Missed'}
-                  </span>
-                  {tx && (
-                    <a href={tx} target="_blank" rel="noreferrer" className="shrink-0 text-xs text-muted" aria-label="View on block explorer">
-                      ↗
-                    </a>
-                  )}
-                </li>
-              );
-            })}
-          </ul>
-        </details>
-      )}
-
-      <HowItWorks rates={rates} />
     </div>
   );
 }

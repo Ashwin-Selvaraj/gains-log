@@ -1,18 +1,13 @@
 import { NextResponse } from 'next/server';
-import { getAddress, parseEther } from 'viem';
 import { prisma } from '@/lib/prisma';
 import { requireUser, unauthorized } from '@/lib/auth';
 import { CHAIN_ID } from '@/lib/chain/config';
-import { goalTokenAbi } from '@/lib/chain/abis';
-import { publicClient, verifierClient, goalTokenAddress } from '@/lib/chain/server';
+import { TESTNETS, payFromTreasury } from '@/lib/chain/treasury';
 
 export const dynamic = 'force-dynamic';
 export const maxDuration = 60;
 
 const STARTER_GRANT = 100;
-
-/** Local chain, Sepolia, BSC Testnet. Tokens here are worthless by design. */
-const TESTNETS = new Set([31337, 11155111, 97]);
 
 /**
  * A one-time float of GOAL so a new person can make their first pledge.
@@ -54,11 +49,6 @@ export async function POST() {
     return NextResponse.json({ error: 'Connect a wallet first.' }, { status: 400 });
   }
 
-  const wallet = await verifierClient();
-  if (!wallet) {
-    return NextResponse.json({ error: 'The token treasury is not configured.' }, { status: 501 });
-  }
-
   // Claimed before sending, conditionally: two taps racing each other both
   // pass a read-then-write check, but only one of them can flip null → now.
   const claimed = await prisma.user.updateMany({
@@ -69,25 +59,8 @@ export async function POST() {
     return NextResponse.json({ error: 'Starter tokens were already claimed.' }, { status: 409 });
   }
 
-  const amount = parseEther(String(STARTER_GRANT));
   try {
-    const float = await publicClient.readContract({
-      address: goalTokenAddress,
-      abi: goalTokenAbi,
-      functionName: 'balanceOf',
-      args: [wallet.account.address],
-    });
-    if (float < amount) throw new Error('The starter pool is empty — ask the admin to top it up.');
-
-    const hash = await wallet.writeContract({
-      address: goalTokenAddress,
-      abi: goalTokenAbi,
-      functionName: 'transfer',
-      args: [getAddress(row.walletAddress), amount],
-      chain: wallet.chain,
-      account: wallet.account,
-    });
-    await publicClient.waitForTransactionReceipt({ hash });
+    const hash = await payFromTreasury(row.walletAddress, STARTER_GRANT);
     return NextResponse.json({ amount: STARTER_GRANT, txHash: hash });
   } catch (err) {
     // Nothing arrived, so the grant is still owed — release the claim.
