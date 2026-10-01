@@ -37,6 +37,43 @@ function provider(): EIP1193Provider | null {
 
 export const hasWallet = () => provider() !== null;
 
+/**
+ * Resolves with whether a wallet appears, waiting briefly for late injection.
+ *
+ * Wallet browsers inject `window.ethereum` around page load, sometimes after
+ * React has already mounted; checking once reported "no wallet" to people
+ * who were inside one.
+ */
+export function waitForWallet(timeoutMs = 1500): Promise<boolean> {
+  if (hasWallet()) return Promise.resolve(true);
+  return new Promise((resolve) => {
+    const done = (v: boolean) => {
+      window.removeEventListener('ethereum#initialized', onInit);
+      clearTimeout(timer);
+      resolve(v);
+    };
+    const onInit = () => done(hasWallet());
+    window.addEventListener('ethereum#initialized', onInit, { once: true });
+    const timer = setTimeout(() => done(hasWallet()), timeoutMs);
+  });
+}
+
+/** Phones and tablets, where a wallet is an app rather than a browser extension. */
+export function isMobileDevice(): boolean {
+  return typeof navigator !== 'undefined' && /Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
+}
+
+/**
+ * Opens this exact page inside MetaMask's in-app browser.
+ *
+ * Mobile Safari and Chrome never expose a wallet to a page, even with MetaMask
+ * installed — only MetaMask's own browser does. This universal link hands the
+ * current page to the app (or the store listing if it isn't installed).
+ */
+export function metamaskDappLink(): string {
+  return `https://metamask.app.link/dapp/${window.location.host}${window.location.pathname}`;
+}
+
 export function walletClient() {
   const eth = provider();
   if (!eth) throw new Error('No wallet found. Install MetaMask to stake.');
