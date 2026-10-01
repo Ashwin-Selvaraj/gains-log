@@ -474,6 +474,11 @@ model User {
   /// back to exactly one person's logs.
   walletAddress String? @unique
 
+  /// When this person received their one-time starter GOAL on a testnet.
+  /// Keyed to the account, not the wallet, so re-linking a fresh wallet can't
+  /// be used to draw the grant twice.
+  starterGrantAt DateTime?
+
   createdAt DateTime @default(now())
 
   accounts Account[]

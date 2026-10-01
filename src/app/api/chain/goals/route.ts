@@ -4,6 +4,8 @@ import { requireUser, unauthorized } from '@/lib/auth';
 import { CHAIN_ID } from '@/lib/chain/config';
 import { METRIC_KEYS } from '@/lib/chain/evaluate';
 import { evaluateGoal } from '@/lib/chain/evaluate';
+import { goalManagerAbi, GOAL_STATUS } from '@/lib/chain/abis';
+import { publicClient, goalManagerAddress } from '@/lib/chain/server';
 
 export const dynamic = 'force-dynamic';
 
@@ -71,11 +73,38 @@ export async function GET() {
     orderBy: { createdAt: 'desc' },
   });
 
+  // The chain is the authority on whether a pledge is still open and what's
+  // staked on it; the row only knows what it measures. Plain parallel reads,
+  // not multicall: multicall needs a Multicall3 contract on the network, which
+  // a fresh local chain doesn't have, and a person has a handful of pledges.
+  const onChain = await Promise.all(
+    goals.map((g) =>
+      publicClient
+        .readContract({
+          address: goalManagerAddress,
+          abi: goalManagerAbi,
+          functionName: 'getGoal',
+          args: [BigInt(g.goalId)],
+        })
+        .catch((err) => {
+          console.error('[chain/goals] getGoal', g.goalId, err instanceof Error ? err.message.split('\n')[0] : err);
+          return null;
+        }),
+    ),
+  );
+
   const withProgress = await Promise.all(
-    goals.map(async (goal) => ({
-      ...goal,
-      progress: await evaluateGoal(goal),
-    })),
+    goals.map(async (goal, i) => {
+      const chainGoal = onChain[i];
+      return {
+        ...goal,
+        progress: await evaluateGoal(goal),
+        // null when the RPC was unreachable — the UI says "status unknown"
+        // rather than guessing a pledge is still open.
+        status: chainGoal ? (GOAL_STATUS[chainGoal.status] ?? 'None') : null,
+        stakeAmount: chainGoal ? chainGoal.stakeAmount.toString() : null,
+      };
+    }),
   );
 
   return NextResponse.json(withProgress);

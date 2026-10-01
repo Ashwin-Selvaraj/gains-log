@@ -3,15 +3,17 @@
 import Link, { useLinkStatus } from 'next/link';
 import { usePathname } from 'next/navigation';
 
+// Plan isn't a tab: it's set up once and then only read by Today's workout
+// card, so it lives in the account menu instead of taking a slot here.
 const TABS = [
   { href: '/', label: 'Today', icon: '📋' },
-  { href: '/plan', label: 'Plan', icon: '🏋️' },
   // "Foods", not "Meals": this tab is the library of combos and the food
   // table, while the meals you actually ate are logged on Today. Two tabs both
   // called some form of "meals", one for logging and one for managing, was the
   // ambiguity — not the split itself.
   { href: '/meals', label: 'Foods', icon: '🍽️' },
   { href: '/report', label: 'Report', icon: '📈' },
+  { href: '/pledges', label: 'Pledges', icon: '🎯' },
   { href: '/history', label: 'History', icon: '🗓️' },
 ];
 
