@@ -11,7 +11,9 @@ import {
   friendlyError,
   goalManager,
   goalToken,
-  hasWallet,
+  isMobileDevice,
+  metamaskDappLink,
+  waitForWallet,
   onRightChain,
   onWalletChange,
   publicClient,
@@ -85,7 +87,7 @@ export function Pledges() {
 
   // Everything that doesn't need the wallet loads immediately and in parallel.
   useEffect(() => {
-    setInstalled(hasWallet());
+    void waitForWallet().then(setInstalled);
     void loadPledges();
     fetch('/api/chain/link-wallet')
       .then((r) => r.json())
@@ -119,6 +121,27 @@ export function Pledges() {
     void sync();
     return onWalletChange(() => void sync());
   }, [installed, refreshWallet]);
+
+  // Inside a wallet's own browser the user has already chosen to be here, so
+  // don't make them find a Connect button: ask once, and once connected put
+  // the wallet on the app's network (adding it if the wallet has never heard
+  // of it) without a separate tap.
+  const [autoTried, setAutoTried] = useState(false);
+  useEffect(() => {
+    if (!installed || autoTried || busy) return;
+    if (!address) {
+      if (isMobileDevice()) {
+        setAutoTried(true);
+        void onConnect();
+      }
+      return;
+    }
+    if (!rightChain) {
+      setAutoTried(true);
+      void onSwitch();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [installed, address, rightChain, autoTried, busy]);
 
   // A wallet already authorised in this browser, on an account with nothing
   // linked yet (a second device, a fresh account): link it without asking.
@@ -317,6 +340,7 @@ export function Pledges() {
           gasSymbol={chain.nativeCurrency.symbol}
           networkName={chain.name}
           walletPresent={!!address}
+          mobile={isMobileDevice()}
           progress={steps.findIndex((s) => !s.done)}
           total={steps.length}
           onConnect={() => void onConnect()}
@@ -480,6 +504,7 @@ function SetupStep({
   gasSymbol,
   networkName,
   walletPresent,
+  mobile,
   progress,
   total,
   onConnect,
@@ -493,6 +518,7 @@ function SetupStep({
   gasSymbol: string;
   networkName: string;
   walletPresent: boolean;
+  mobile: boolean;
   progress: number;
   total: number;
   onConnect: () => void;
@@ -523,17 +549,32 @@ function SetupStep({
               : copy.title}
       </p>
       <p className="mt-1 text-sm text-muted">
-        {next === 'connect' && walletPresent
+        {next === 'install' && mobile
+          ? 'Phone browsers can’t see your wallet app. Open this page inside MetaMask’s own browser and it connects and sets up the network for you.'
+          : next === 'connect' && walletPresent
           ? 'The wallet open in this browser isn’t the one linked to your account. Pledges, claims and starter tokens follow the linked wallet.'
           : copy.body}
       </p>
 
       <div className="mt-3">
-        {next === 'install' && (
-          <a className="btn-primary w-full" href="https://metamask.io/download/" target="_blank" rel="noreferrer">
-            Get MetaMask ↗
-          </a>
-        )}
+        {next === 'install' &&
+          (mobile ? (
+            <div className="space-y-2">
+              <a className="btn-primary w-full" href={metamaskDappLink()}>
+                Open in MetaMask
+              </a>
+              <p className="text-center text-xs text-muted">
+                Don&apos;t have it?{' '}
+                <a className="underline underline-offset-2" href="https://metamask.io/download/" target="_blank" rel="noreferrer">
+                  Install MetaMask
+                </a>
+              </p>
+            </div>
+          ) : (
+            <a className="btn-primary w-full" href="https://metamask.io/download/" target="_blank" rel="noreferrer">
+              Get MetaMask ↗
+            </a>
+          ))}
         {next === 'connect' && (
           <button type="button" className="btn-primary w-full" disabled={busy === 'connect'} onClick={onConnect}>
             {busy === 'connect'
