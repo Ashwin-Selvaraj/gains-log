@@ -172,6 +172,27 @@ model StakedGoal {
   @@index([userId])
 }
 
+/// A GOAL reward paid out for a quest (a streak milestone, a fully logged
+/// week, ...). One row per quest per period: the unique key is what makes a
+/// double-tap, a retry or two open tabs unable to pay the same reward twice.
+///
+/// periodKey is "once" for one-off quests, a date for daily ones, an ISO week
+/// ("2026-W40") for weekly ones and a season id for challenges.
+model RewardClaim {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  ruleKey   String
+  periodKey String
+  amount    Int
+  /// Null only while the transfer is in flight.
+  txHash    String?
+  createdAt DateTime @default(now())
+
+  @@unique([userId, ruleKey, periodKey])
+  @@index([createdAt])
+}
+
 model Settings {
   id                String @id @default(cuid())
   /// One settings row per user; replaced the former "singleton" row.
@@ -484,25 +505,26 @@ model User {
   accounts Account[]
   sessions Session[]
 
-  entries       DailyEntry[]
-  meetings      Meeting[]
-  meals         MealEntry[]
-  sets          WorkoutSet[]
-  photos        Photo[]
-  planDays      PlanDay[]
-  presets       MealPreset[]
-  carried       CarriedExercise[]
-  foods         Food[]
-  settings      Settings?
-  subscriptions PushSubscription[]
-  notifications NotificationLog[]
-  aiUsage       AiUsage[]
-  reminders     Reminder[]
-  habits        Habit[]
-  habitLogs     HabitLog[]
-  exercises     Exercise[]
+  entries        DailyEntry[]
+  meetings       Meeting[]
+  meals          MealEntry[]
+  sets           WorkoutSet[]
+  photos         Photo[]
+  planDays       PlanDay[]
+  presets        MealPreset[]
+  carried        CarriedExercise[]
+  foods          Food[]
+  settings       Settings?
+  subscriptions  PushSubscription[]
+  notifications  NotificationLog[]
+  aiUsage        AiUsage[]
+  reminders      Reminder[]
+  habits         Habit[]
+  habitLogs      HabitLog[]
+  exercises      Exercise[]
   exerciseImages ExerciseImage[]
   stakedGoals    StakedGoal[]
+  rewardClaims   RewardClaim[]
 }
 
 model Account {
