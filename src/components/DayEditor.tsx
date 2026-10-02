@@ -400,7 +400,11 @@ export function DayEditor({
               : undefined
             : progress
               ? `${progress.doneCount}/${progress.totalCount}`
-              : (plan?.name ?? undefined)
+              : entry.sets.length > 0
+                ? // Sets on a rest/no-plan day: "Rest" beside a done tick
+                  // contradicted itself.
+                  `${entry.sets.length} ${entry.sets.length === 1 ? 'set' : 'sets'}`
+                : (plan?.name ?? undefined)
         }
       >
         <WorkoutCard
@@ -877,7 +881,9 @@ function MealsSection({
                         )}
                         <div className="min-w-0 flex-1">
                           <p className="truncate text-sm font-medium">{m.name}</p>
-                          <p className="text-xs tabular-nums text-muted">
+                          {/* One line, truncated: wrapping left a lone "F 15"
+                              on its own line beside the slot picker. */}
+                          <p className="truncate text-xs tabular-nums text-muted">
                             {m.calories ?? '—'} kcal · P {m.protein ?? '—'}
                             {m.carbs != null && ` · C ${m.carbs}`}
                             {m.fat != null && ` · F ${m.fat}`}
@@ -917,10 +923,9 @@ function MealsSection({
             })}
           </div>
 
-          {/* The full macro split, once there is anything to split. */}
-          <p className="text-xs tabular-nums text-muted">
-            Carbs {totals.carbs} g · Fat {totals.fat} g · Fibre {totals.fiber} g
-          </p>
+          {/* No macro line here: the targets bar at the top of this card
+              already shows carbs, fat and fibre, and repeating it under the
+              meal list said the same thing twice. */}
         </>
       )}
 

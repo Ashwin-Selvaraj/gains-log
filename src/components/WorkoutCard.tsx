@@ -379,14 +379,22 @@ export function WorkoutCard({
     <section className="card space-y-1">
       <div className="flex items-baseline justify-between gap-2">
         <h2 className="min-w-0 truncate text-base font-semibold">
+          {/* Sets logged on a day with no workout planned is a session, not a
+              "rest day" — the old heading contradicted the sets right under it. */}
           {focusGroups.length > 0
             ? focusGroups.map(muscleGroupLabel).join(' + ')
-            : isRest
-              ? 'Rest day'
-              : plan.name}
-          <span className="ml-2 text-xs font-normal text-muted">
-            {focusGroups.length > 0 ? "today's focus" : "today's plan"}
-          </span>
+            : isRest && sets.length > 0
+              ? "Today's session"
+              : !plan
+                ? 'No workout planned'
+                : isRest
+                  ? 'Rest day'
+                  : plan.name}
+          {(focusGroups.length > 0 || (plan && !(isRest && sets.length > 0))) && (
+            <span className="ml-2 text-xs font-normal text-muted">
+              {focusGroups.length > 0 ? "today's focus" : "today's plan"}
+            </span>
+          )}
         </h2>
         {sets.length > 0 && (
           <p className="shrink-0 text-sm tabular-nums text-muted">
@@ -423,8 +431,8 @@ export function WorkoutCard({
 
       {isRest && sets.length === 0 && focusGroups.length === 0 && (
         <p className="py-2 text-sm text-muted">
-          Nothing scheduled today. Set your split on the Plan tab — or log something
-          anyway below.
+          Nothing scheduled today — log something anyway below, or set a weekly split
+          under Workout plan in the account menu.
         </p>
       )}
 
@@ -448,7 +456,9 @@ export function WorkoutCard({
           {focusGroups.length > 0
             ? 'Change focus'
             : isRest
-              ? 'Training something today?'
+              ? sets.length > 0
+                ? 'Tag what you trained'
+                : 'Training something today?'
               : `Not doing ${plan.name.toLowerCase()} today?`}
         </button>
       ))}

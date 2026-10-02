@@ -356,10 +356,14 @@ export function Pledges() {
         <div className="flex items-start justify-between gap-3">
           <div>
             <p className="text-xs font-medium uppercase tracking-wide text-muted">Available</p>
-            <p className="mt-0.5 text-4xl font-bold tabular-nums leading-none">
-              {balance !== null ? fmtGoal(balance) : '—'}
-              <span className="ml-1.5 text-base font-semibold text-muted">GAINS</span>
-            </p>
+            {balance !== null ? (
+              <p className="mt-0.5 text-4xl font-bold tabular-nums leading-none">
+                {fmtGoal(balance)}
+                <span className="ml-1.5 text-base font-semibold text-muted">GAINS</span>
+              </p>
+            ) : (
+              <p className="mt-1 text-sm text-muted">Connect MetaMask below to see your GAINS.</p>
+            )}
           </div>
           {address && (
             <a

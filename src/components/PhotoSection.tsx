@@ -149,7 +149,7 @@ export function PhotoSection({ date, photos, onChange, bare = false }: Props) {
           disabled={busy}
           onClick={() => inputRef.current?.click()}
         >
-          🖼️ Choose
+          🖼️ From gallery
         </button>
       </div>
 
