@@ -30,12 +30,23 @@ export const publicClient = createPublicClient({ chain, transport: http() });
 export const goalToken = ADDRESSES.goalToken as Address;
 export const goalManager = ADDRESSES.goalManager as Address;
 
+/**
+ * RPC endpoints offered to the wallet when it adds this network.
+ *
+ * publicnode first for BSC Testnet: Binance's own seed nodes are viem's
+ * default but rate-limit hard, and MetaMask checks the endpoint answers with
+ * the right chain id before it will add the network.
+ */
+const WALLET_RPC: Record<number, string[]> = {
+  97: ['https://bsc-testnet-rpc.publicnode.com', ...bscTestnet.rpcUrls.default.http],
+};
+
 /** What MetaMask needs to add this network when it hasn't seen it before. */
 const CHAIN_CONFIG = {
   chainId: CHAIN_HEX,
   chainName: chain.name,
   nativeCurrency: chain.nativeCurrency,
-  rpcUrls: [...chain.rpcUrls.default.http],
+  rpcUrls: WALLET_RPC[chain.id] ?? [...chain.rpcUrls.default.http],
   blockExplorerUrls: chain.blockExplorers ? [chain.blockExplorers.default.url] : undefined,
 };
 
@@ -148,15 +159,54 @@ export async function ensureChain(): Promise<void> {
   }
 }
 
-/** True when the connected wallet is on the app's network. */
-export async function onRightChain(): Promise<boolean> {
-  try {
-    const client = await walletConnector();
-    return client.getChainId()?.toLowerCase() === CHAIN_HEX;
-  } catch {
-    return false;
-  }
+/**
+ * Adds the app's network to MetaMask and switches MetaMask to it.
+ *
+ * Connecting isn't enough on a phone. MetaMask Connect stamps every request
+ * with the network it's for, so pledges and claims land on BSC Testnet either
+ * way — and because of that, its own switchChain() only switches internally
+ * once the network is part of the session, never telling MetaMask. The result
+ * was a wallet that worked but still showed Ethereum, with BSC Testnet never
+ * added, so GAINS could not be shown in it. `wallet_addEthereumChain` always
+ * goes to MetaMask: it adds the network if missing, and switches to it.
+ */
+export async function addNetworkToWallet(): Promise<void> {
+  const client = await walletConnector();
+  await client.getProvider().request({ method: 'wallet_addEthereumChain', params: [CHAIN_CONFIG] });
 }
+
+/**
+ * Asks MetaMask to list the token, so the balance shows up in the wallet.
+ *
+ * Symbol and decimals are read from the contract rather than hard-coded:
+ * MetaMask rejects a watch request whose symbol disagrees with the token's
+ * own, which is exactly the failure a rename would cause.
+ */
+export async function addTokenToWallet(): Promise<void> {
+  const [symbol, decimals] = await Promise.all([
+    publicClient.readContract({ address: goalToken, abi: tokenMetaAbi, functionName: 'symbol' }),
+    publicClient.readContract({ address: goalToken, abi: tokenMetaAbi, functionName: 'decimals' }),
+  ]);
+  const client = await walletConnector();
+  const added = await client.getProvider().request({
+    method: 'wallet_watchAsset',
+    params: {
+      type: 'ERC20',
+      options: {
+        address: goalToken,
+        symbol,
+        decimals,
+        image: `${window.location.origin}/icon-512.png`,
+      },
+    },
+  });
+  if (added === false) throw new Error('MetaMask didn’t add the token — try again.');
+}
+
+const tokenMetaAbi = [
+  { type: 'function', name: 'symbol', stateMutability: 'view', inputs: [], outputs: [{ type: 'string' }] },
+  { type: 'function', name: 'decimals', stateMutability: 'view', inputs: [], outputs: [{ type: 'uint8' }] },
+] as const;
 
 /** Subscribes to account, network and disconnect events; returns an unsubscribe. */
 export function onWalletChange(handler: () => void): () => void {

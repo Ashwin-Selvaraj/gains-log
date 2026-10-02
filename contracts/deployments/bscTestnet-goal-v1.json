@@ -1,14 +1,14 @@
 {
   "network": "bscTestnet",
   "chainId": 97,
-  "deployedAt": "2026-10-02T08:23:02.981Z",
+  "deployedAt": "2026-09-30T07:31:47.678Z",
   "admin": "0x8358847c2D38F97F2Fc20cfA83F61075C4BfD14A",
   "treasury": "0x8358847c2D38F97F2Fc20cfA83F61075C4BfD14A",
   "contracts": {
-    "GoalToken": "0x7BB25a7ca027e1275156eB3cFa805de0989179Ab",
-    "GoalManager": "0x749ffBbd44c5AA37dB7464cb14203485AD406b1f",
-    "LogAnchor": "0x3f3115B49C79a09Ea7ED2DBee42949514D659753",
-    "BuybackBurn": "0xD899E7E1A62b0696ECDC590e50AEA0c039c4c3Bd",
+    "GoalToken": "0xB6f868482542D1AD8644363293f9413Ab58f4aB0",
+    "GoalManager": "0xC0b367ACcd82E360343F46BE562d40018eBe3C03",
+    "LogAnchor": "0x834Ba8f51F77168184465799E5D0E8b1DCE22FDf",
+    "BuybackBurn": "0x016EA30c0f25555e4142e4B9bD41a3afE00A9dBf",
     "SwapRouter": "0xD99D1c33F9fC3444f8101754aBC46c52416550D1"
   },
   "config": {

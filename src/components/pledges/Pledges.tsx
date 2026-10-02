@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { formatEther, parseEther, type Address } from 'viem';
 import { goalManagerAbi, goalTokenAbi } from '@/lib/chain/abis';
 import {
@@ -11,8 +11,9 @@ import {
   friendlyError,
   goalManager,
   goalToken,
+  addNetworkToWallet,
+  addTokenToWallet,
   disconnect,
-  onRightChain,
   onWalletChange,
   onWalletLink,
   publicClient,
@@ -33,7 +34,7 @@ const MIN_GAS = parseEther('0.001');
 type Toast = { tone: 'ok' | 'err'; text: string } | null;
 
 /**
- * The Pledges tab: put GOAL behind a training goal, let your logs decide.
+ * The Pledges tab: put GAINS behind a training goal, let your logs decide.
  *
  * Built around three questions, in the order people ask them:
  *   1. What do I have?        — the balance strip at the top
@@ -41,13 +42,12 @@ type Toast = { tone: 'ok' | 'err'; text: string } | null;
  *   3. How do I start one?    — a guided composer seeded from my own history
  *
  * Anything a newcomer needs before they can pledge (a wallet, the right
- * network, a little gas, some GOAL) is one checklist that shows only the next
+ * network, a little gas, some GAINS) is one checklist that shows only the next
  * missing step — rather than an error at the moment they try to commit.
  */
 export function Pledges() {
   const [address, setAddress] = useState<Address | null>(null);
   const [linked, setLinked] = useState<string | null | undefined>(undefined);
-  const [rightChain, setRightChain] = useState(true);
   const [balance, setBalance] = useState<bigint | null>(null);
   const [gas, setGas] = useState<bigint | null>(null);
   const [pledges, setPledges] = useState<Pledge[] | null>(null);
@@ -55,7 +55,11 @@ export function Pledges() {
   const [rates, setRates] = useState<Rates | null>(null);
   const [starter, setStarter] = useState<{ available: boolean; amount: number } | null>(null);
   const [composing, setComposing] = useState(false);
-  const [watched, setWatched] = useState(true);
+  // What MetaMask has been told, per wallet. The app can't ask MetaMask which
+  // networks or tokens it lists, so these record that the user confirmed it.
+  // The token flag is keyed by the token address too, so a redeployed token
+  // shows up as a step to redo rather than silently "done".
+  const [walletSetup, setWalletSetup] = useState({ network: false, token: false });
   // Set when the connector tries to open MetaMask; shown as a manual link in
   // case the phone didn't switch apps on its own.
   const [walletLink, setWalletLink] = useState<string | null>(null);
@@ -94,7 +98,7 @@ export function Pledges() {
       setGas(null);
       return;
     }
-    const [bal, native, ok] = await Promise.all([
+    const [bal, native] = await Promise.all([
       publicClient.readContract({
         address: goalToken,
         abi: goalTokenAbi,
@@ -102,11 +106,9 @@ export function Pledges() {
         args: [who],
       }),
       publicClient.getBalance({ address: who }),
-      onRightChain(),
     ]);
     setBalance(bal);
     setGas(native);
-    setRightChain(ok);
   }, []);
 
   // Everything that doesn't need the wallet loads immediately and in parallel.
@@ -159,11 +161,21 @@ export function Pledges() {
   useEffect(() => {
     if (!address) return;
     try {
-      setWatched(localStorage.getItem(`goal-watched:${address}`) === '1');
+      setWalletSetup({
+        network: localStorage.getItem(flagKey('network', address)) === '1',
+        token: localStorage.getItem(flagKey('token', address)) === '1',
+      });
     } catch {
-      setWatched(true);
+      setWalletSetup({ network: false, token: false });
     }
   }, [address]);
+
+  function markSetup(which: 'network' | 'token') {
+    try {
+      if (address) localStorage.setItem(flagKey(which, address), '1');
+    } catch {}
+    setWalletSetup((w) => ({ ...w, [which]: true }));
+  }
 
   async function link(who: Address) {
     const res = await fetch('/api/chain/link-wallet', {
@@ -199,10 +211,11 @@ export function Pledges() {
       await refreshWallet(who);
     });
 
-  const onSwitch = () =>
-    run('switch', async () => {
-      await ensureChain();
-      await refreshWallet(address);
+  const onAddNetwork = () =>
+    run('network', async () => {
+      await addNetworkToWallet();
+      markSetup('network');
+      setToast({ tone: 'ok', text: `MetaMask is on ${chain.name} now.` });
     });
 
   const onStarter = () =>
@@ -212,22 +225,16 @@ export function Pledges() {
       if (!res.ok) throw new Error(json.error ?? 'Could not send starter tokens.');
       setStarter((s) => (s ? { ...s, available: false } : s));
       await refreshWallet(address);
-      setToast({ tone: 'ok', text: `${json.amount} GOAL landed in your wallet on ${chain.name}. 🎉` });
+      setToast({ tone: 'ok', text: `${json.amount} GAINS landed in your wallet on ${chain.name}. 🎉` });
     });
 
   // Tokens are in the wallet either way; this just makes MetaMask list them,
   // since it doesn't show tokens it hasn't been told about.
   const onWatchToken = () =>
-    run('watch', async () => {
-      await ensureChain();
-      await (await walletClient()).watchAsset({
-        type: 'ERC20',
-        options: { address: goalToken, symbol: 'GOAL', decimals: 18 },
-      });
-      try {
-        localStorage.setItem(`goal-watched:${address}`, '1');
-      } catch {}
-      setWatched(true);
+    run('token', async () => {
+      await addTokenToWallet();
+      markSetup('token');
+      setToast({ tone: 'ok', text: 'GAINS is listed in MetaMask — open the wallet to see your balance.' });
     });
 
   const onDisconnect = () =>
@@ -284,16 +291,28 @@ export function Pledges() {
     : 0n;
   const won = past.filter((p) => p.status === 'Succeeded').length;
 
-  // Receiving GOAL needs no gas and no signature — the server sends it — so
+  // Receiving GAINS needs no gas and no signature — the server sends it — so
   // tokens come before gas. Gas only matters once you want to pledge.
-  const steps = [
-    { key: 'connect', done: !!address && !!linked && linked.toLowerCase() === address.toLowerCase() },
-    { key: 'network', done: !!address && rightChain },
-    { key: 'tokens', done: balance !== null && (balance > 0n || locked > 0n) },
-    { key: 'gas', done: gas !== null && gas >= MIN_GAS },
+  const connected = !!address && !!linked && linked.toLowerCase() === address.toLowerCase();
+  const steps: SetupStepState[] = [
+    { key: 'connect', done: connected, detail: address ? `${address.slice(0, 6)}…${address.slice(-4)}` : undefined },
+    { key: 'network', done: connected && walletSetup.network },
+    {
+      key: 'tokens',
+      done: balance !== null && (balance > 0n || locked > 0n || starter?.available === false),
+      detail: balance !== null && balance > 0n ? `${fmtGoal(balance)} GAINS in your wallet` : undefined,
+    },
+    { key: 'token', done: connected && walletSetup.token },
+    {
+      key: 'gas',
+      done: gas !== null && gas >= MIN_GAS,
+      detail: gas !== null && gas > 0n ? `${Number(formatEther(gas)).toFixed(4)} ${chain.nativeCurrency.symbol}` : undefined,
+    },
   ];
-  const next = steps.find((s) => !s.done)?.key ?? null;
-  const ready = next === null;
+  const nextIndex = steps.findIndex((s) => !s.done);
+  // Pledging needs a connection, some GAINS and gas. Whether MetaMask *shows*
+  // the network or token is for the person's benefit, not the transaction's.
+  const ready = ['connect', 'tokens', 'gas'].every((k) => steps.find((s) => s.key === k)?.done);
 
   if (pledges === null) {
     return (
@@ -333,13 +352,13 @@ export function Pledges() {
       )}
 
       {/* ── What do I have ─────────────────────────────────────────────── */}
-      <section className="card" aria-label="Your GOAL">
+      <section className="card" aria-label="Your GAINS">
         <div className="flex items-start justify-between gap-3">
           <div>
             <p className="text-xs font-medium uppercase tracking-wide text-muted">Available</p>
             <p className="mt-0.5 text-4xl font-bold tabular-nums leading-none">
               {balance !== null ? fmtGoal(balance) : '—'}
-              <span className="ml-1.5 text-base font-semibold text-muted">GOAL</span>
+              <span className="ml-1.5 text-base font-semibold text-muted">GAINS</span>
             </p>
           </div>
           {address && (
@@ -361,22 +380,6 @@ export function Pledges() {
           <Stat label="Pledges won" value={`${won}/${past.length}`} />
         </dl>
 
-        {address && balance !== null && balance > 0n && !watched && (
-          <div className="mt-3 flex items-center gap-3 rounded-xl bg-accent/10 p-3">
-            <p className="min-w-0 flex-1 text-xs">
-              Your GOAL is in your wallet. MetaMask only lists tokens it&apos;s told about — add it once to see it there.
-            </p>
-            <button
-              type="button"
-              className="btn-primary shrink-0 px-3 text-sm"
-              disabled={busy === 'watch'}
-              onClick={() => void onWatchToken()}
-            >
-              {busy === 'watch' ? '…' : 'Add to MetaMask'}
-            </button>
-          </div>
-        )}
-
         {address && (
           <div className="mt-3 flex items-center justify-between gap-2 text-[11px] text-muted">
             <span className="min-w-0 truncate">
@@ -395,7 +398,7 @@ export function Pledges() {
         )}
       </section>
 
-      {/* Pledges risk GOAL; quests pay it out. Same tab, two jobs. */}
+      {/* Pledges risk GAINS; quests pay it out. Same tab, two jobs. */}
       <div role="tablist" aria-label="Pledges or rewards" className="grid grid-cols-2 gap-1 rounded-xl bg-line/60 p-1">
         {(['pledges', 'earn'] as const).map((v) => {
           const on = view === v;
@@ -412,7 +415,7 @@ export function Pledges() {
               }`}
             >
               <span aria-hidden>{v === 'pledges' ? '🎯' : '🏆'}</span>
-              {v === 'pledges' ? 'Pledges' : 'Earn GOAL'}
+              {v === 'pledges' ? 'Pledges' : 'Earn GAINS'}
               {waiting > 0 && (
                 <span className="rounded-full bg-accent px-1.5 text-[11px] font-bold leading-5 text-white">
                   {waiting}
@@ -435,23 +438,19 @@ export function Pledges() {
 
       {view === 'pledges' && (
         <>
-        {/* ── Getting set up (only the next missing step) ───────────────── */}
-        {!ready && (
-          <SetupStep
-            next={next!}
-            busy={busy}
-            starter={starter}
-            gasSymbol={chain.nativeCurrency.symbol}
-            networkName={chain.name}
-            walletPresent={!!address}
-            progress={steps.findIndex((s) => !s.done)}
-            total={steps.length}
-            onConnect={() => void onConnect()}
-            onSwitch={() => void onSwitch()}
-            onStarter={() => void onStarter()}
-            onRecheck={() => void refreshWallet(address)}
-          />
-        )}
+        {/* ── Wallet setup: every step, swipeable ─────────────────────── */}
+        <SetupCarousel
+          steps={steps}
+          current={nextIndex}
+          busy={busy}
+          starter={starter}
+          walletPresent={!!address}
+          onConnect={() => void onConnect()}
+          onAddNetwork={() => void onAddNetwork()}
+          onStarter={() => void onStarter()}
+          onAddToken={() => void onWatchToken()}
+          onRecheck={() => void refreshWallet(address)}
+        />
 
         {/* ── Am I going to make it ─────────────────────────────────────── */}
         <section aria-label="Active pledges">
@@ -468,7 +467,7 @@ export function Pledges() {
               </p>
               <p className="mt-1 text-sm font-semibold">No live pledges</p>
               <p className="mx-auto mt-1 max-w-xs text-xs text-muted">
-                Put a few GOAL behind a goal you&apos;d otherwise let slide. Hit it and earn{' '}
+                Put a few GAINS behind a goal you&apos;d otherwise let slide. Hit it and earn{' '}
                 {rates ? `${rates.rewardBps / 100}%` : 'a reward'}; miss it and you still get most of it back.
               </p>
             </div>
@@ -579,118 +578,282 @@ function Stat({ label, value, accent }: { label: string; value: string; accent?:
   );
 }
 
-const STEP_COPY: Record<string, { title: string; body: string }> = {
+type SetupStepState = { key: string; done: boolean; detail?: string };
+
+function flagKey(which: 'network' | 'token', address: string): string {
+  return which === 'token'
+    ? `gains-wallet-token:${goalToken.toLowerCase()}:${address.toLowerCase()}`
+    : `gains-wallet-network:${chain.id}:${address.toLowerCase()}`;
+}
+
+const STEP_COPY: Record<string, { icon: string; title: string; body: string; doneTitle: string }> = {
   connect: {
+    icon: '🦊',
     title: 'Connect MetaMask',
-    body: 'Tap below and MetaMask opens to approve — on a phone it switches to the app and back. It also moves your wallet to the right network. No password, no transaction, nothing to pay.',
+    body: 'MetaMask opens to approve, then you come back here. No password, no transaction, nothing to pay.',
+    doneTitle: 'Wallet connected',
   },
   network: {
-    title: 'Switch network',
-    body: 'Your wallet is on a different network. MetaMask will ask to switch — and add it if it’s missing.',
+    icon: '🔗',
+    title: `Add ${chain.name} to MetaMask`,
+    body: 'GAINS lives on this network. MetaMask asks to add it (if it’s new) and switches to it, so your tokens show up there.',
+    doneTitle: `MetaMask is on ${chain.name}`,
   },
   tokens: {
-    title: 'Claim your starter GOAL',
-    body: 'Free, one time, and sent straight to your wallet. Nothing to sign or pay — you just receive it.',
+    icon: '🎁',
+    title: 'Claim your free GAINS',
+    body: 'A one-time starter amount, sent straight to your wallet. Nothing to sign or pay — you just receive it.',
+    doneTitle: 'Starter GAINS received',
+  },
+  token: {
+    icon: '👀',
+    title: 'Show GAINS in MetaMask',
+    body: 'MetaMask only lists tokens it’s been told about. One tap adds GAINS, with its logo, so you can see your balance there.',
+    doneTitle: 'GAINS listed in MetaMask',
   },
   gas: {
-    title: 'Last step: a little gas to pledge',
-    body: 'Receiving GOAL is free, but making a pledge is a transaction, which costs a tiny network fee. The official faucet gives test gas free — paste your wallet address there, then come back.',
+    icon: '⛽',
+    title: `Get a little test ${chain.nativeCurrency.symbol} to pledge`,
+    body: 'Receiving GAINS is free. Making a pledge is a transaction with a tiny network fee — the official faucet gives test gas free. Paste your wallet address there, then come back.',
+    doneTitle: 'Ready to pledge',
   },
 };
 
-function SetupStep({
-  next,
+/**
+ * Wallet setup as a swipeable row of every step.
+ *
+ * Showing only the next step hid what had already been done — at step 4 there
+ * was no way to see that steps 1–3 were finished, or to redo one (say, adding
+ * the network on a second phone). Every step is a card you can swipe to; the
+ * row opens on the current one. Once everything is done it folds away into one
+ * line that can be reopened.
+ */
+function SetupCarousel({
+  steps,
+  current,
   busy,
   starter,
-  gasSymbol,
-  networkName,
   walletPresent,
-  progress,
-  total,
   onConnect,
-  onSwitch,
+  onAddNetwork,
   onStarter,
+  onAddToken,
   onRecheck,
 }: {
-  next: string;
+  steps: SetupStepState[];
+  current: number;
   busy: string | null;
   starter: { available: boolean; amount: number } | null;
-  gasSymbol: string;
-  networkName: string;
   walletPresent: boolean;
-  progress: number;
-  total: number;
   onConnect: () => void;
-  onSwitch: () => void;
+  onAddNetwork: () => void;
   onStarter: () => void;
+  onAddToken: () => void;
   onRecheck: () => void;
 }) {
-  const copy = STEP_COPY[next];
-  return (
-    <section className="card border-accent/40" aria-label="Set up pledges">
-      <div className="flex items-center justify-between">
-        <p className="text-xs font-medium uppercase tracking-wide text-accent">
-          Setup · step {progress + 1} of {total}
-        </p>
-        <div className="flex gap-1" aria-hidden>
-          {Array.from({ length: total }, (_, i) => (
-            <span key={i} className={`h-1.5 w-5 rounded-full ${i < progress ? 'bg-accent' : 'bg-line'}`} />
-          ))}
-        </div>
-      </div>
-      <p className="mt-2 text-base font-semibold">
-        {next === 'network'
-          ? `Switch to ${networkName}`
-          : next === 'gas'
-            ? `Last step: a little test ${gasSymbol} to pledge`
-            : next === 'connect' && walletPresent
-              ? 'Use this wallet for pledges'
-              : copy.title}
-      </p>
-      <p className="mt-1 text-sm text-muted">
-        {next === 'connect' && walletPresent
-          ? 'The connected wallet isn’t the one linked to your account. Pledges, claims and starter tokens follow the linked wallet.'
-          : copy.body}
-      </p>
+  const allDone = current === -1;
+  const [open, setOpen] = useState(!allDone);
+  const [shown, setShown] = useState(Math.max(0, current));
+  const track = useRef<HTMLDivElement>(null);
+  const doneCount = steps.filter((s) => s.done).length;
 
-      <div className="mt-3">
-        {next === 'connect' && (
-          <button type="button" className="btn-primary w-full" disabled={busy === 'connect'} onClick={onConnect}>
-            {busy === 'connect'
-              ? 'Waiting for MetaMask…'
-              : walletPresent
-                ? 'Use this wallet'
-                : '🦊 Connect MetaMask'}
+  // Land on the current step whenever it changes (a step just got finished).
+  useEffect(() => {
+    if (current < 0) return;
+    setOpen(true);
+    const el = track.current?.children[current] as HTMLElement | undefined;
+    el?.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'start' });
+  }, [current]);
+
+  function goTo(i: number) {
+    const el = track.current?.children[i] as HTMLElement | undefined;
+    el?.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'start' });
+  }
+
+  function onScroll() {
+    const el = track.current;
+    if (!el) return;
+    setShown(Math.round(el.scrollLeft / el.clientWidth));
+  }
+
+  if (allDone && !open) {
+    return (
+      <button
+        type="button"
+        onClick={() => setOpen(true)}
+        className="card flex w-full items-center gap-3 text-left text-sm"
+      >
+        <span className="flex h-7 w-7 items-center justify-center rounded-full bg-accent/15 text-accent">✓</span>
+        <span className="min-w-0 flex-1 font-medium">Wallet set up</span>
+        <span className="text-xs text-muted">View steps ▾</span>
+      </button>
+    );
+  }
+
+  return (
+    <section className="card overflow-hidden p-0" aria-label="Wallet setup" aria-roledescription="carousel">
+      <div className="flex items-center justify-between px-4 pt-4">
+        <p className="text-xs font-medium uppercase tracking-wide text-accent">
+          Wallet setup · {doneCount} of {steps.length} done
+        </p>
+        {allDone && (
+          <button type="button" className="text-xs text-muted" onClick={() => setOpen(false)}>
+            Hide ▴
           </button>
         )}
-        {next === 'network' && (
-          <button type="button" className="btn-primary w-full" disabled={busy === 'switch'} onClick={onSwitch}>
-            {busy === 'switch' ? 'Approve in MetaMask…' : `Switch to ${networkName}`}
-          </button>
-        )}
-        {next === 'tokens' &&
-          (starter?.available ? (
-            <button type="button" className="btn-primary w-full" disabled={busy === 'starter'} onClick={onStarter}>
-              {busy === 'starter' ? 'Sending to your wallet…' : `Claim ${starter.amount} free GOAL`}
-            </button>
-          ) : (
-            <p className="text-sm text-muted">
-              You&apos;ve already claimed your starter GOAL. Earn more on the Earn GOAL side, or ask the admin.
-            </p>
-          ))}
-        {next === 'gas' && (
-          <div className="flex gap-2">
-            <a className="btn-primary flex-1" href={FAUCET_URL} target="_blank" rel="noreferrer">
-              Open faucet ↗
-            </a>
-            <button type="button" className="btn-quiet shrink-0 px-4" onClick={onRecheck}>
-              I&apos;ve got it
-            </button>
-          </div>
-        )}
+      </div>
+
+      <div
+        ref={track}
+        onScroll={onScroll}
+        className="flex snap-x snap-mandatory overflow-x-auto scroll-smooth [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+      >
+        {steps.map((step, i) => {
+          const copy = STEP_COPY[step.key];
+          const isCurrent = i === current;
+          const locked = !step.done && current !== -1 && i > current;
+          return (
+            <div
+              key={step.key}
+              role="group"
+              aria-label={`Step ${i + 1} of ${steps.length}`}
+              className="w-full shrink-0 snap-start px-4 pb-3 pt-3"
+            >
+              <div className="flex items-start gap-3">
+                <span
+                  aria-hidden
+                  className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-xl text-xl ${
+                    step.done ? 'bg-accent/15' : isCurrent ? 'bg-accent/10 ring-2 ring-accent/40' : 'bg-surface'
+                  }`}
+                >
+                  {step.done ? '✅' : copy.icon}
+                </span>
+                <div className="min-w-0 flex-1">
+                  <p className="text-[11px] font-medium uppercase tracking-wide text-muted">
+                    Step {i + 1}
+                    {step.done ? ' · done' : isCurrent ? ' · now' : ''}
+                  </p>
+                  <p className="text-base font-semibold leading-snug">
+                    {step.done ? copy.doneTitle : step.key === 'connect' && walletPresent ? 'Use this wallet' : copy.title}
+                  </p>
+                  {step.done && step.detail && <p className="text-xs text-muted">{step.detail}</p>}
+                </div>
+              </div>
+
+              {!step.done && <p className="mt-2 text-sm text-muted">{copy.body}</p>}
+
+              <div className="mt-3">
+                {locked ? (
+                  <p className="rounded-xl bg-surface px-3 py-2.5 text-center text-sm text-muted">
+                    Finish step {current + 1} first
+                  </p>
+                ) : (
+                  <StepAction
+                    stepKey={step.key}
+                    done={step.done}
+                    busy={busy}
+                    starter={starter}
+                    walletPresent={walletPresent}
+                    onConnect={onConnect}
+                    onAddNetwork={onAddNetwork}
+                    onStarter={onStarter}
+                    onAddToken={onAddToken}
+                    onRecheck={onRecheck}
+                  />
+                )}
+              </div>
+            </div>
+          );
+        })}
+      </div>
+
+      {/* Dots double as a step picker for anyone who doesn't think to swipe. */}
+      <div className="flex justify-center gap-1.5 pb-3">
+        {steps.map((step, i) => (
+          <button
+            key={step.key}
+            type="button"
+            aria-label={`Go to step ${i + 1}`}
+            aria-current={shown === i ? 'step' : undefined}
+            onClick={() => goTo(i)}
+            className={`h-2 rounded-full transition-all ${shown === i ? 'w-6' : 'w-2'} ${
+              step.done ? 'bg-accent' : i === current ? 'bg-accent/50' : 'bg-line'
+            }`}
+          />
+        ))}
       </div>
     </section>
   );
+}
+
+function StepAction({
+  stepKey,
+  done,
+  busy,
+  starter,
+  walletPresent,
+  onConnect,
+  onAddNetwork,
+  onStarter,
+  onAddToken,
+  onRecheck,
+}: {
+  stepKey: string;
+  done: boolean;
+  busy: string | null;
+  starter: { available: boolean; amount: number } | null;
+  walletPresent: boolean;
+  onConnect: () => void;
+  onAddNetwork: () => void;
+  onStarter: () => void;
+  onAddToken: () => void;
+  onRecheck: () => void;
+}) {
+  // Done steps that are safe to repeat keep a quiet button — adding the
+  // network or token again is how a second phone gets set up.
+  const quiet = 'btn-quiet w-full text-sm';
+  switch (stepKey) {
+    case 'connect':
+      return done ? null : (
+        <button type="button" className="btn-primary w-full" disabled={busy === 'connect'} onClick={onConnect}>
+          {busy === 'connect' ? 'Waiting for MetaMask…' : walletPresent ? 'Use this wallet' : '🦊 Connect MetaMask'}
+        </button>
+      );
+    case 'network':
+      return (
+        <button type="button" className={done ? quiet : 'btn-primary w-full'} disabled={busy === 'network'} onClick={onAddNetwork}>
+          {busy === 'network' ? 'Approve in MetaMask…' : done ? 'Add / switch again' : `Add ${chain.name}`}
+        </button>
+      );
+    case 'tokens':
+      if (done) return null;
+      return starter?.available ? (
+        <button type="button" className="btn-primary w-full" disabled={busy === 'starter'} onClick={onStarter}>
+          {busy === 'starter' ? 'Sending to your wallet…' : `Claim ${starter.amount} free GAINS`}
+        </button>
+      ) : (
+        <p className="text-sm text-muted">Starter already claimed — earn more on the Earn GAINS side.</p>
+      );
+    case 'token':
+      return (
+        <button type="button" className={done ? quiet : 'btn-primary w-full'} disabled={busy === 'token'} onClick={onAddToken}>
+          {busy === 'token' ? 'Approve in MetaMask…' : done ? 'Add to MetaMask again' : 'Show GAINS in MetaMask'}
+        </button>
+      );
+    case 'gas':
+      return done ? null : (
+        <div className="flex gap-2">
+          <a className="btn-primary flex-1" href={FAUCET_URL} target="_blank" rel="noreferrer">
+            Open faucet ↗
+          </a>
+          <button type="button" className="btn-quiet shrink-0 px-4" onClick={onRecheck}>
+            I&apos;ve got it
+          </button>
+        </div>
+      );
+    default:
+      return null;
+  }
 }
 
 function HowItWorks({ rates }: { rates: Rates | null }) {
@@ -703,7 +866,7 @@ function HowItWorks({ rates }: { rates: Rates | null }) {
         <li>
           <strong>1. Commit.</strong>{' '}
           <span className="text-muted">
-            Pick a goal, a deadline and how much GOAL to put behind it. It&apos;s locked in a smart contract —
+            Pick a goal, a deadline and how much GAINS to put behind it. It&apos;s locked in a smart contract —
             not held by us.
           </span>
         </li>
@@ -726,7 +889,7 @@ function HowItWorks({ rates }: { rates: Rates | null }) {
       </ol>
       <p className="mt-3 border-t border-line pt-2 text-[11px] text-muted">
         Your workouts and meals never go on the blockchain — only the goal, the deadline and the result.
-        The fee can never exceed 20%; that limit is written into the contract itself. Running on {chain.name}: GOAL
+        The fee can never exceed 20%; that limit is written into the contract itself. Running on {chain.name}: GAINS
         here is test currency with no cash value.
       </p>
     </details>

@@ -10,8 +10,8 @@ async function deploy(feeBps = 1_000, rewardBps = 2_000) {
   const [admin, user, other, treasury] = await ethers.getSigners();
 
   const token = await ethers.deployContract('GoalToken', [
-    'Goal Token',
-    'GOAL',
+    'Gains',
+    'GAINS',
     CAP,
     admin.address,
   ]);

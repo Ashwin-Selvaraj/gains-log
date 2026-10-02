@@ -1,7 +1,7 @@
 import { addDays, daysBetween, isoWeekKey, type DateKey } from '@/lib/date';
 
 /**
- * Quests: things you already do in the app, paid in GOAL.
+ * Quests: things you already do in the app, paid in GAINS.
  *
  * Pure — no Prisma, no chain — so the rules that draw the progress bars are
  * the very same rules the server re-runs before it pays anything. A quest the

@@ -7,7 +7,7 @@ const DAY = 24 * 60 * 60;
 describe('GoalToken', () => {
   async function deployToken(cap: bigint) {
     const [admin, user] = await ethers.getSigners();
-    const token = await ethers.deployContract('GoalToken', ['Goal Token', 'GOAL', cap, admin.address]);
+    const token = await ethers.deployContract('GoalToken', ['Gains', 'GAINS', cap, admin.address]);
     return { token, admin, user };
   }
 
@@ -75,7 +75,7 @@ describe('GoalToken', () => {
     it('still returns the stake when no headroom is left, minting a reduced reward', async () => {
       const [admin, user, , treasury] = await ethers.getSigners();
       const cap = ethers.parseEther('1000');
-      const token = await ethers.deployContract('GoalToken', ['G', 'GOAL', cap, admin.address]);
+      const token = await ethers.deployContract('GoalToken', ['G', 'GAINS', cap, admin.address]);
       const manager = await ethers.deployContract('GoalManager', [
         await token.getAddress(),
         admin.address,
@@ -109,7 +109,7 @@ describe('GoalToken', () => {
     it('mints only the headroom that remains when the reward would overshoot', async () => {
       const [admin, user, , treasury] = await ethers.getSigners();
       const cap = ethers.parseEther('1000');
-      const token = await ethers.deployContract('GoalToken', ['G', 'GOAL', cap, admin.address]);
+      const token = await ethers.deployContract('GoalToken', ['G', 'GAINS', cap, admin.address]);
       const manager = await ethers.deployContract('GoalManager', [
         await token.getAddress(),
         admin.address,

@@ -95,7 +95,7 @@ export function PledgeCard({
         </div>
         {stake !== null && (
           <span className="shrink-0 rounded-full bg-accent/10 px-2.5 py-1 text-xs font-semibold tabular-nums text-accent">
-            {fmtGoal(stake)} GOAL
+            {fmtGoal(stake)} GAINS
           </span>
         )}
       </div>
@@ -146,7 +146,7 @@ export function PledgeCard({
           disabled={busy}
           onClick={onClaim}
         >
-          {busy ? 'Checking your logs…' : `Claim ${money ? fmtGoal(money.hit) : ''} GOAL`}
+          {busy ? 'Checking your logs…' : `Claim ${money ? fmtGoal(money.hit) : ''} GAINS`}
         </button>
       )}
 

@@ -37,10 +37,10 @@ function rank(q: QuestView): number {
 }
 
 /**
- * The "Earn GOAL" side of the Pledges tab.
+ * The "Earn GAINS" side of the Pledges tab.
  *
  * Pledges ask you to risk tokens; quests just pay you for showing up. Both are
- * here because the second is how most people will get enough GOAL to try the
+ * here because the second is how most people will get enough GAINS to try the
  * first — and because a list of things you're one day away from is the best
  * reason to log today.
  */
@@ -71,7 +71,7 @@ export function Rewards({
       });
       const json = await res.json();
       if (!res.ok) throw new Error(json.error ?? 'Could not claim that.');
-      await onChanged(`${json.emoji} +${json.amount} GOAL — ${json.title}${period.label ? ` (${period.label.toLowerCase()})` : ''}.`);
+      await onChanged(`${json.emoji} +${json.amount} GAINS — ${json.title}${period.label ? ` (${period.label.toLowerCase()})` : ''}.`);
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Could not claim that.');
     } finally {
@@ -113,7 +113,7 @@ export function Rewards({
         </div>
         {ready.length > 0 && (
           <p className="mt-3 rounded-xl bg-accent/10 px-3 py-2 text-center text-sm font-medium text-accent">
-            {ready.length} {ready.length === 1 ? 'reward' : 'rewards'} ready · +{readyTotal} GOAL waiting
+            {ready.length} {ready.length === 1 ? 'reward' : 'rewards'} ready · +{readyTotal} GAINS waiting
           </p>
         )}
         {!canClaim && (
@@ -218,7 +218,7 @@ function ClaimButton({
       disabled={!canClaim || busy}
       onClick={onClaim}
     >
-      {busy ? 'Paying out…' : `Claim +${quest.amount} GOAL${label ? ` · ${label.toLowerCase()}` : ''}`}
+      {busy ? 'Paying out…' : `Claim +${quest.amount} GAINS${label ? ` · ${label.toLowerCase()}` : ''}`}
     </button>
   );
 }
@@ -339,7 +339,7 @@ function Leaderboard({ board }: { board: RewardsData['leaderboard'] }) {
   return (
     <section className="card" aria-label="Leaderboard">
       <div className="flex items-baseline justify-between">
-        <h2 className="text-base font-semibold">GOAL Getters · {board.month}</h2>
+        <h2 className="text-base font-semibold">Top Gainers · {board.month}</h2>
         <span className="text-xs text-muted">from quests</span>
       </div>
       {board.top.length === 0 ? (
