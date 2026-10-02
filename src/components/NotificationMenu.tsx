@@ -29,9 +29,6 @@ export function NotificationMenu() {
         </span>
       }
     >
-      <p className="border-b border-line px-3 py-2.5 text-xs font-semibold uppercase tracking-wider text-muted">
-        Notifications
-      </p>
       <ReminderToggle chrome="plain" />
       <EventToggles />
     </Menu>

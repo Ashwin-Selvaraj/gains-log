@@ -410,7 +410,7 @@ export function PhotoEstimate({ date, onConfirm }: Props) {
                 className="btn-quiet w-full"
                 onClick={() => inputRef.current?.click()}
               >
-                🖼️ Choose
+                🖼️ From gallery
               </button>
             </div>
           )}

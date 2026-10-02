@@ -93,8 +93,8 @@ export default function ReportPage() {
           </div>
         </div>
         <p className="mt-3 border-t border-line pt-2 text-[11px] text-muted">
-          Score is training 30 · habits 25 · protein 25 · plan followed 20. Every part is
-          shown above, so it&apos;s never a number you have to take on faith.
+          Score is {score.parts.map((p) => `${p.label.toLowerCase()} ${p.max}`).join(' · ')}. Every
+          part is shown above, so it&apos;s never a number you have to take on faith.
         </p>
       </section>
 
@@ -234,12 +234,23 @@ export default function ReportPage() {
                 good={training.volumeKg >= training.prevVolumeKg}
               />
               <Metric label="Sets" value={String(training.totalSets)} sub="logged" />
-              <Metric
-                label="Plan"
-                value={`${training.adherence.pct}%`}
-                sub={`${training.adherence.completed}/${training.adherence.planned}`}
-                good={training.adherence.pct >= 80}
-              />
+              {training.adherence.planned > 0 ? (
+                <Metric
+                  label="Plan"
+                  value={`${training.adherence.pct}%`}
+                  sub={`${training.adherence.completed}/${training.adherence.planned}`}
+                  good={training.adherence.pct >= 80}
+                />
+              ) : (
+                // No plan: "Plan 0% · 0/0" read as a failure for not using a
+                // feature. Sessions against the weekly goal is the real question.
+                <Metric
+                  label="Sessions"
+                  value={String(training.sessions)}
+                  sub={`of ${training.sessionGoal} goal`}
+                  good={training.sessions >= training.sessionGoal}
+                />
+              )}
             </div>
 
             {training.prs.length > 0 && (

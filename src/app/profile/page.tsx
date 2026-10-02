@@ -7,6 +7,7 @@ import { mutate } from '@/lib/sync';
 import { SkeletonBlock } from '@/components/Skeleton';
 import { Stat, RateBar } from '@/components/StatCard';
 import { STREAK_TARGET, type BmiBand } from '@/lib/profile';
+import { RULES } from '@/lib/rewards';
 import { BASE_SCOPES, CALENDAR_SCOPE } from '@/lib/scopes';
 import { todayKey } from '@/lib/date';
 import type { Profile } from '@/lib/account';
@@ -158,25 +159,34 @@ export default function ProfilePage() {
           </span>
         </div>
 
-        {/* Dots to the milestone, so "5 days" is a visible destination rather
-            than a number you have to remember. */}
-        <div className="mt-4 flex gap-1.5" aria-hidden>
-          {Array.from({ length: STREAK_TARGET }).map((_, i) => (
-            <div
-              key={i}
-              className={`h-1.5 flex-1 rounded-full ${
-                i < Math.min(streaks.current, STREAK_TARGET) ? 'bg-accent' : 'bg-line'
-              }`}
-            />
-          ))}
-        </div>
-        <p className="mt-2 text-xs text-muted">
-          {streaks.current >= STREAK_TARGET
-            ? `${STREAK_TARGET}-day streak held. Keep it going.`
-            : `${STREAK_TARGET - streaks.current} more day${
-                STREAK_TARGET - streaks.current === 1 ? '' : 's'
-              } to a ${STREAK_TARGET}-day streak.`}
-        </p>
+        {/* The same ladder as the streak quests on Earn GAINS, so the bar here
+            and the reward there always point at the same next milestone. It
+            used to stop at 5: a 16-day streak still read "5-day streak held". */}
+        {(() => {
+          const ladder = RULES.filter((r) => r.key.startsWith('streak-'))
+            .map((r) => ({ days: Number(r.key.slice(7)), title: r.title, amount: r.amount }))
+            .sort((a, b) => a.days - b.days);
+          const next = ladder.find((m) => m.days > streaks.current);
+          const prev = [...ladder].reverse().find((m) => m.days <= streaks.current)?.days ?? 0;
+          const pct = next ? ((streaks.current - prev) / (next.days - prev)) * 100 : 100;
+          const left = next ? next.days - streaks.current : 0;
+          return (
+            <>
+              <div className="mt-4 h-1.5 overflow-hidden rounded-full bg-line" aria-hidden>
+                <div className="h-full rounded-full bg-accent transition-all" style={{ width: `${pct}%` }} />
+              </div>
+              <div className="mt-1 flex justify-between text-[11px] tabular-nums text-muted" aria-hidden>
+                <span>{prev}</span>
+                <span>{next?.days ?? `${streaks.current}+`}</span>
+              </div>
+              <p className="mt-1 text-xs text-muted">
+                {next
+                  ? `${left} more day${left === 1 ? '' : 's'} to ${next.days} — ${next.title}, +${next.amount} GAINS.`
+                  : 'Every streak milestone reached. Legendary.'}
+              </p>
+            </>
+          );
+        })()}
 
         {streaks.atRisk && (
           <p className="mt-3 rounded-xl border border-amber-500/30 bg-amber-500/5 px-3 py-2 text-sm text-amber-700 dark:text-amber-400">

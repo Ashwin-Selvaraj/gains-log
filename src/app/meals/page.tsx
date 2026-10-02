@@ -47,7 +47,9 @@ export default function MealsPage() {
                             : 'border-line bg-card text-muted'
                         }`}
           >
-            {t === 'presets' ? 'My combos' : t === 'foods' ? 'Food table' : 'History'}
+            {/* "Meal log", not "History": the main nav already has a History
+                tab (past days), and two screens with one name was confusing. */}
+            {t === 'presets' ? 'My combos' : t === 'foods' ? 'Food table' : 'Meal log'}
           </button>
         ))}
       </div>
@@ -125,6 +127,16 @@ function PresetsTab({
 
   return (
     <>
+      {/* Explanation first when there's nothing yet: a blank form with no
+          context above it doesn't say what a combo is or why you'd make one. */}
+      {presets?.length === 0 && (
+        <p className="card mb-4 text-sm text-muted">
+          <strong className="block text-ink">Save the meals you eat most</strong>
+          A combo is a meal you repeat — log it on Today in one tap instead of adding
+          each food. Breakfast is usually the same every day, so start there.
+        </p>
+      )}
+
       <section className="card mb-4 space-y-3">
         <input
           className="field"
@@ -203,13 +215,6 @@ function PresetsTab({
       </section>
 
       {presets === null && <SkeletonBlock className="h-56" />}
-
-      {presets?.length === 0 && (
-        <p className="card text-sm text-muted">
-          No combos yet. Build the meals you eat most — breakfast is usually the same
-          every day, so that&apos;s the one worth saving first.
-        </p>
-      )}
 
       {presets && presets.length > 0 && (
         <ul className="card divide-y divide-line !p-0">

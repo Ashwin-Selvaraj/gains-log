@@ -89,8 +89,24 @@ export default function HistoryPage() {
                   <p className="truncate text-xs text-muted">{summarise(entry)}</p>
                 </div>
 
-                <span aria-hidden className="shrink-0 text-sm tracking-tight">
-                  {stamped.map((h) => h.icon).join('') || '—'}
+                {/* All four, always in the same order — done ones lit, the rest
+                    faded — so the days line up into columns you can scan down,
+                    instead of a variable-length run of emoji (or a bare dash). */}
+                <span
+                  className="flex shrink-0 gap-1 text-sm"
+                  aria-label={
+                    stamped.length ? `Done: ${stamped.map((h) => h.label).join(', ')}` : 'No habits ticked'
+                  }
+                >
+                  {HABITS.map((h) => (
+                    <span
+                      key={h.key}
+                      aria-hidden
+                      className={entry[h.key] ? '' : 'opacity-20 grayscale'}
+                    >
+                      {h.icon}
+                    </span>
+                  ))}
                 </span>
                 <span
                   aria-hidden

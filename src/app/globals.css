@@ -299,3 +299,9 @@ body {
   border-color: rgb(var(--accent));
   box-shadow: 0 0 0 4px rgb(var(--accent) / 0.25);
 }
+
+/* Backdrop behind sheet-style menus (see Menu.tsx). */
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}

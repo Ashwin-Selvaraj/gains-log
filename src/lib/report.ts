@@ -365,40 +365,47 @@ export async function buildWeeklyReport(
   /* ── score ──────────────────────────────────────────────────────────── */
 
   const habitTicks = habits.reduce((n, h) => n + h.days, 0);
-  const trainingScore = Math.min(sessions / Math.max(settings.weeklyWorkoutGoal, 1), 1) * 30;
-  const habitScore = (habitTicks / (HABITS.length * 7)) * 25;
-  const proteinScore = (proteinHitDays / 7) * 25;
-  const adherenceScore =
-    plannedTotal > 0 ? (completedTotal / plannedTotal) * 20 : sessions > 0 ? 20 : 0;
+  // With no plan there's nothing to follow, so "plan followed" can't be
+  // scored — it used to award its 20 points for free, inflating every week of
+  // anyone who doesn't use plans. It drops out and the rest are re-weighted
+  // to keep the total out of 100.
+  const hasPlan = plannedTotal > 0;
+  const weight = hasPlan
+    ? { training: 30, habits: 25, protein: 25, plan: 20 }
+    : { training: 40, habits: 30, protein: 30, plan: 0 };
+  const trainingScore = Math.min(sessions / Math.max(settings.weeklyWorkoutGoal, 1), 1) * weight.training;
+  const habitScore = (habitTicks / (HABITS.length * 7)) * weight.habits;
+  const proteinScore = (proteinHitDays / 7) * weight.protein;
 
   const parts: ScorePart[] = [
     {
       label: 'Training',
       score: Math.round(trainingScore),
-      max: 30,
+      max: weight.training,
       detail: `${sessions} of ${settings.weeklyWorkoutGoal} sessions`,
     },
     {
       label: 'Habits',
       score: Math.round(habitScore),
-      max: 25,
+      max: weight.habits,
       detail: `${habitTicks} of ${HABITS.length * 7} ticks`,
     },
     {
       label: 'Protein',
       score: Math.round(proteinScore),
-      max: 25,
+      max: weight.protein,
       detail: `${proteinHitDays} of 7 days on target`,
     },
-    {
-      label: 'Plan followed',
-      score: Math.round(adherenceScore),
-      max: 20,
-      detail:
-        plannedTotal > 0
-          ? `${completedTotal} of ${plannedTotal} exercises`
-          : 'no plan set',
-    },
+    ...(hasPlan
+      ? [
+          {
+            label: 'Plan followed',
+            score: Math.round((completedTotal / plannedTotal) * weight.plan),
+            max: weight.plan,
+            detail: `${completedTotal} of ${plannedTotal} exercises`,
+          },
+        ]
+      : []),
   ];
 
   const total = parts.reduce((n, p) => n + p.score, 0);
