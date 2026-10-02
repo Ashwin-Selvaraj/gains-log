@@ -22,6 +22,7 @@ import type {
   WorkoutSet,
 } from '@/lib/types';
 import { PhotoEstimate } from '@/components/PhotoEstimate';
+import { QuickCombos, SaveAsCombo } from '@/components/QuickCombos';
 import { FoodPicker } from '@/components/FoodPicker';
 import { TargetsBar } from '@/components/TargetsBar';
 import { WorkoutCard } from '@/components/WorkoutCard';
@@ -191,8 +192,11 @@ export function DayEditor({
           ...prev,
           meals: prev.meals.map((m) => (m.id === optimistic.id ? saved : m)),
         }));
+        // The saved id, so a caller can offer Undo on exactly this meal.
+        return saved.id;
       } catch (err) {
         report(err);
+        return null;
       }
     },
     [date, report],
@@ -788,7 +792,7 @@ function MealsSection({
   meals: Meal[];
   presets: Preset[];
   totals: Macros;
-  onAdd: (payload: Record<string, unknown>, optimistic: Omit<Meal, 'id'>) => void;
+  onAdd: (payload: Record<string, unknown>, optimistic: Omit<Meal, 'id'>) => Promise<string | null>;
   onRemove: (id: string) => void;
   onMoveSlot: (id: string, slot: string) => void;
   /** Nested inside a <Section>, which already draws the card and the heading. */
@@ -798,6 +802,9 @@ function MealsSection({
   // Seeded from the phone's clock, then remembered for the session so logging
   // three things after dinner doesn't mean picking "dinner" three times.
   const [addSlot, setAddSlot] = useState<string>(() => slotForHour(new Date().getHours()));
+  // Local so a combo saved from this screen shows up in "Your usual" at once.
+  const [combos, setCombos] = useState(presets);
+  useEffect(() => setCombos(presets), [presets]);
   const [name, setName] = useState('');
   const [calories, setCalories] = useState('');
   const [protein, setProtein] = useState('');
@@ -835,6 +842,16 @@ function MealsSection({
         </div>
       )}
 
+      {/* First, because most meals are a repeat: the usual breakfast or shake
+          should be one tap, before scrolling past anything. */}
+      <QuickCombos
+        combos={combos}
+        meals={meals}
+        clockSlot={slotForHour(new Date().getHours())}
+        onAdd={onAdd}
+        onRemove={onRemove}
+      />
+
       {/* Grouped by meal of the day rather than one flat list, so the log says
           *when* as well as *what* — which is what makes "am I front-loading my
           protein or eating it all at dinner?" answerable at a glance. Empty
@@ -862,6 +879,14 @@ function MealsSection({
                     <p className="shrink-0 text-xs tabular-nums text-muted">
                       {slotKcal} kcal · {slotProtein}g P
                     </p>
+                  </div>
+                  <div className="flex flex-wrap justify-end pt-1">
+                    <SaveAsCombo
+                      slotKey={slotDef.key}
+                      meals={inSlot}
+                      combos={combos}
+                      onSaved={(combo) => setCombos((list) => [...list, combo])}
+                    />
                   </div>
 
                   <ul className="divide-y divide-line">
@@ -955,42 +980,6 @@ function MealsSection({
           ))}
         </div>
       </div>
-
-      {presets.length > 0 && (
-        <div>
-          <p className="label">One tap</p>
-          <div className="flex flex-wrap gap-2">
-            {presets.map((p) => (
-              <button
-                key={p.id}
-                type="button"
-                onClick={() =>
-                  onAdd(
-                    { presetId: p.id, slot: addSlot },
-                    {
-                      name: p.name,
-                      calories: p.macros.kcal,
-                      protein: p.macros.protein,
-                      carbs: p.macros.carbs,
-                      fat: p.macros.fat,
-                      fiber: p.macros.fiber,
-                      source: 'preset',
-                      photoUrl: null,
-                    },
-                  )
-                }
-                className="min-h-[44px] rounded-xl border border-line bg-surface px-3 text-sm
-                           font-medium active:scale-[0.97]"
-              >
-                {p.name}
-                <span className="ml-1.5 text-xs font-normal text-muted">
-                  {p.macros.protein}g
-                </span>
-              </button>
-            ))}
-          </div>
-        </div>
-      )}
 
       {mode === 'search' ? (
         <FoodPicker
