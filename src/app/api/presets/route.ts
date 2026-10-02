@@ -51,13 +51,43 @@ export function withMacros(preset: PresetRow) {
 export async function GET() {
   const user = await requireUser();
   if (!user) return unauthorized();
-  const presets = await prisma.mealPreset.findMany({
-    where: { userId: user.id },
-    include,
-    orderBy: { createdAt: 'asc' },
-    ...withJoins,
-  });
-  return NextResponse.json(presets.map(withMacros));
+  const [presets, usage] = await Promise.all([
+    prisma.mealPreset.findMany({
+      where: { userId: user.id },
+      include,
+      orderBy: { createdAt: 'asc' },
+      ...withJoins,
+    }),
+    // How often, and in which slot, each combo has actually been eaten. A
+    // logged combo is a meal with source "preset" and the combo's name — the
+    // meal row is a snapshot, so the name is the link.
+    prisma.mealEntry.groupBy({
+      by: ['name', 'slot'],
+      where: { userId: user.id, source: 'preset' },
+      _count: { _all: true },
+    }),
+  ]);
+
+  const usual = new Map<string, { slot: string; count: number; total: number }>();
+  for (const row of usage) {
+    const n = row._count._all;
+    const cur = usual.get(row.name);
+    if (!cur) usual.set(row.name, { slot: row.slot, count: n, total: n });
+    else {
+      cur.total += n;
+      if (n > cur.count) Object.assign(cur, { slot: row.slot, count: n });
+    }
+  }
+
+  return NextResponse.json(
+    presets.map((p) => ({
+      ...withMacros(p),
+      // Where this combo normally goes, so tapping the breakfast combo at
+      // 1pm still files it as breakfast. Null until it's been logged once.
+      usualSlot: usual.get(p.name)?.slot ?? null,
+      timesLogged: usual.get(p.name)?.total ?? 0,
+    })),
+  );
 }
 
 export async function POST(req: Request) {

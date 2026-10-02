@@ -192,6 +192,9 @@ export type Preset = {
   items: PresetItem[];
   /** True when the preset predates the food database and has no foods behind it. */
   legacy: boolean;
+  /** The slot it's most often logged in; null until it has been logged. */
+  usualSlot?: string | null;
+  timesLogged?: number;
 };
 
 export type EstimatedItem = {
