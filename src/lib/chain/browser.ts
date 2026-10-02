@@ -236,7 +236,7 @@ export function explorerUrl(kind: 'tx' | 'address' | 'token', value: string): st
   return base ? `${base}/${kind}/${value}` : null;
 }
 
-function isRejection(err: unknown): boolean {
+export function isRejection(err: unknown): boolean {
   const e = err as { code?: number; name?: string; message?: string };
   return e?.code === 4001 || e?.name === 'UserRejectedRequestError' || /reject|denied|cancel/i.test(e?.message ?? '');
 }

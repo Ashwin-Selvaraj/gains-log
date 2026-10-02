@@ -9,6 +9,7 @@ import {
   ensureChain,
   explorerUrl,
   friendlyError,
+  isRejection,
   goalManager,
   goalToken,
   addNetworkToWallet,
@@ -63,6 +64,9 @@ export function Pledges() {
   // Set when the connector tries to open MetaMask; shown as a manual link in
   // case the phone didn't switch apps on its own.
   const [walletLink, setWalletLink] = useState<string | null>(null);
+  // Set when MetaMask fails the automatic "add token" request; the step then
+  // switches to the manual import, which always works.
+  const [manualToken, setManualToken] = useState(false);
 
   useEffect(() => {
     let timer: ReturnType<typeof setTimeout>;
@@ -230,11 +234,26 @@ export function Pledges() {
 
   // Tokens are in the wallet either way; this just makes MetaMask list them,
   // since it doesn't show tokens it hasn't been told about.
+  // MetaMask's phone app can fail wallet_watchAsset when it arrives over
+  // MetaMask Connect (it shows a bare "Something went wrong"), and nothing on
+  // this side can fix that. The tokens are in the wallet regardless — listing
+  // them only needs the contract address — so a failure falls back to a manual
+  // import instead of a dead end.
   const onWatchToken = () =>
     run('token', async () => {
-      await addTokenToWallet();
-      markSetup('token');
-      setToast({ tone: 'ok', text: 'GAINS is listed in MetaMask — open the wallet to see your balance.' });
+      try {
+        await addTokenToWallet();
+        markSetup('token');
+        setManualToken(false);
+        setToast({ tone: 'ok', text: 'GAINS is listed in MetaMask — open the wallet to see your balance.' });
+      } catch (e) {
+        if (isRejection(e)) throw e;
+        setManualToken(true);
+        setToast({
+          tone: 'err',
+          text: 'MetaMask couldn’t add GAINS automatically. Your tokens are safe — add it manually below, it takes 30 seconds.',
+        });
+      }
     });
 
   const onDisconnect = () =>
@@ -453,6 +472,13 @@ export function Pledges() {
           onAddNetwork={() => void onAddNetwork()}
           onStarter={() => void onStarter()}
           onAddToken={() => void onWatchToken()}
+          manualToken={manualToken}
+          onShowManualToken={() => setManualToken(true)}
+          onManualTokenDone={() => {
+            markSetup('token');
+            setManualToken(false);
+            setToast({ tone: 'ok', text: 'Nice — GAINS should now show in MetaMask under BNB Smart Chain Testnet.' });
+          }}
           onRecheck={() => void refreshWallet(address)}
         />
 
@@ -643,6 +669,9 @@ function SetupCarousel({
   onStarter,
   onAddToken,
   onRecheck,
+  manualToken,
+  onShowManualToken,
+  onManualTokenDone,
 }: {
   steps: SetupStepState[];
   current: number;
@@ -654,6 +683,9 @@ function SetupCarousel({
   onStarter: () => void;
   onAddToken: () => void;
   onRecheck: () => void;
+  manualToken: boolean;
+  onShowManualToken: () => void;
+  onManualTokenDone: () => void;
 }) {
   const allDone = current === -1;
   const [open, setOpen] = useState(!allDone);
@@ -762,6 +794,9 @@ function SetupCarousel({
                     onAddNetwork={onAddNetwork}
                     onStarter={onStarter}
                     onAddToken={onAddToken}
+                    manualToken={manualToken}
+                    onShowManualToken={onShowManualToken}
+                    onManualTokenDone={onManualTokenDone}
                     onRecheck={onRecheck}
                   />
                 )}
@@ -801,6 +836,9 @@ function StepAction({
   onStarter,
   onAddToken,
   onRecheck,
+  manualToken,
+  onShowManualToken,
+  onManualTokenDone,
 }: {
   stepKey: string;
   done: boolean;
@@ -812,6 +850,9 @@ function StepAction({
   onStarter: () => void;
   onAddToken: () => void;
   onRecheck: () => void;
+  manualToken: boolean;
+  onShowManualToken: () => void;
+  onManualTokenDone: () => void;
 }) {
   // Done steps that are safe to repeat keep a quiet button — adding the
   // network or token again is how a second phone gets set up.
@@ -839,10 +880,16 @@ function StepAction({
         <p className="text-sm text-muted">Starter already claimed — earn more on the Earn GAINS side.</p>
       );
     case 'token':
+      if (manualToken) return <ManualTokenImport onDone={onManualTokenDone} />;
       return (
-        <button type="button" className={done ? quiet : 'btn-primary w-full'} disabled={busy === 'token'} onClick={onAddToken}>
-          {busy === 'token' ? 'Approve in MetaMask…' : done ? 'Add to MetaMask again' : 'Show GAINS in MetaMask'}
-        </button>
+        <div className="space-y-2">
+          <button type="button" className={done ? quiet : 'btn-primary w-full'} disabled={busy === 'token'} onClick={onAddToken}>
+            {busy === 'token' ? 'Approve in MetaMask…' : done ? 'Add to MetaMask again' : 'Show GAINS in MetaMask'}
+          </button>
+          <button type="button" className="w-full text-center text-xs text-muted underline underline-offset-2" onClick={onShowManualToken}>
+            Add it manually instead
+          </button>
+        </div>
       );
     case 'gas':
       return done ? null : (
@@ -897,5 +944,69 @@ function HowItWorks({ rates }: { rates: Rates | null }) {
         here is test currency with no cash value.
       </p>
     </details>
+  );
+}
+
+/**
+ * Listing GAINS in MetaMask by hand — the fallback when the automatic request
+ * fails, and always available. MetaMask only needs the contract address; it
+ * reads the symbol and decimals from the chain itself.
+ */
+function ManualTokenImport({ onDone }: { onDone: () => void }) {
+  const [copied, setCopied] = useState(false);
+
+  async function copy() {
+    try {
+      await navigator.clipboard.writeText(goalToken);
+    } catch {
+      // Older iOS without clipboard permission: select the text so a
+      // long-press copy works instead.
+      const el = document.getElementById('gains-token-address');
+      const range = document.createRange();
+      if (el) {
+        range.selectNodeContents(el);
+        window.getSelection()?.removeAllRanges();
+        window.getSelection()?.addRange(range);
+      }
+    }
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2500);
+  }
+
+  return (
+    <div className="space-y-3 rounded-xl border border-line bg-surface p-3">
+      <div>
+        <p className="mb-1 text-xs font-medium text-muted">GAINS token address</p>
+        <div className="flex items-center gap-2">
+          <code
+            id="gains-token-address"
+            className="min-w-0 flex-1 break-all rounded-lg bg-card px-2 py-1.5 font-mono text-[11px] leading-snug"
+          >
+            {goalToken}
+          </code>
+          <button type="button" className="btn-primary shrink-0 px-3 text-sm" onClick={() => void copy()}>
+            {copied ? 'Copied ✓' : 'Copy'}
+          </button>
+        </div>
+      </div>
+
+      <ol className="list-decimal space-y-1 pl-4 text-xs">
+        <li>Open MetaMask and make sure <strong>{chain.name}</strong> is the selected network.</li>
+        <li>
+          Tap <strong>Tokens</strong>, then <strong>Import tokens</strong> (at the bottom of the list, or under
+          the ⋮ menu).
+        </li>
+        <li>
+          Choose <strong>Custom token</strong> and paste the address. GAINS and 18 decimals fill in by themselves.
+        </li>
+        <li>
+          Tap <strong>Next</strong>, then <strong>Import</strong>. Your GAINS balance appears.
+        </li>
+      </ol>
+
+      <button type="button" className="btn-quiet w-full text-sm" onClick={onDone}>
+        I&apos;ve added it
+      </button>
+    </div>
   );
 }
