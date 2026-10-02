@@ -109,7 +109,7 @@ export function PledgeComposer({
     setError(null);
     try {
       await ensureChain();
-      const wallet = walletClient();
+      const wallet = await walletClient();
       const deadline = new Date(Date.now() + days * DAY_MS);
 
       // Skip the approval when an earlier one already covers this stake — one

@@ -11,11 +11,10 @@ import {
   friendlyError,
   goalManager,
   goalToken,
-  isMobileDevice,
-  metamaskDappLink,
-  waitForWallet,
+  disconnect,
   onRightChain,
   onWalletChange,
+  onWalletLink,
   publicClient,
   silentAccount,
   walletClient,
@@ -46,7 +45,6 @@ type Toast = { tone: 'ok' | 'err'; text: string } | null;
  * missing step — rather than an error at the moment they try to commit.
  */
 export function Pledges() {
-  const [installed, setInstalled] = useState<boolean | null>(null);
   const [address, setAddress] = useState<Address | null>(null);
   const [linked, setLinked] = useState<string | null | undefined>(undefined);
   const [rightChain, setRightChain] = useState(true);
@@ -57,6 +55,23 @@ export function Pledges() {
   const [rates, setRates] = useState<Rates | null>(null);
   const [starter, setStarter] = useState<{ available: boolean; amount: number } | null>(null);
   const [composing, setComposing] = useState(false);
+  const [watched, setWatched] = useState(true);
+  // Set when the connector tries to open MetaMask; shown as a manual link in
+  // case the phone didn't switch apps on its own.
+  const [walletLink, setWalletLink] = useState<string | null>(null);
+
+  useEffect(() => {
+    let timer: ReturnType<typeof setTimeout>;
+    const off = onWalletLink((url) => {
+      setWalletLink(url);
+      clearTimeout(timer);
+      timer = setTimeout(() => setWalletLink(null), 90_000);
+    });
+    return () => {
+      off();
+      clearTimeout(timer);
+    };
+  }, []);
   const [view, setView] = useState<'pledges' | 'earn'>('pledges');
   const [rewards, setRewards] = useState<RewardsData | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
@@ -96,7 +111,6 @@ export function Pledges() {
 
   // Everything that doesn't need the wallet loads immediately and in parallel.
   useEffect(() => {
-    void waitForWallet().then(setInstalled);
     void loadPledges();
     void loadRewards();
     fetch('/api/chain/link-wallet')
@@ -119,10 +133,10 @@ export function Pledges() {
       .catch(() => {});
   }, [loadPledges, loadRewards]);
 
-  // Restore an already-authorised wallet without a popup, and follow the
-  // wallet if the user switches account or network in it.
+  // Restore a previous session without a popup, and follow the wallet when
+  // the account or network changes in it — including when someone comes back
+  // from approving in the MetaMask app.
   useEffect(() => {
-    if (!installed) return;
     const sync = async () => {
       const who = await silentAccount();
       setAddress(who);
@@ -130,28 +144,7 @@ export function Pledges() {
     };
     void sync();
     return onWalletChange(() => void sync());
-  }, [installed, refreshWallet]);
-
-  // Inside a wallet's own browser the user has already chosen to be here, so
-  // don't make them find a Connect button: ask once, and once connected put
-  // the wallet on the app's network (adding it if the wallet has never heard
-  // of it) without a separate tap.
-  const [autoTried, setAutoTried] = useState(false);
-  useEffect(() => {
-    if (!installed || autoTried || busy) return;
-    if (!address) {
-      if (isMobileDevice()) {
-        setAutoTried(true);
-        void onConnect();
-      }
-      return;
-    }
-    if (!rightChain) {
-      setAutoTried(true);
-      void onSwitch();
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [installed, address, rightChain, autoTried, busy]);
+  }, [refreshWallet]);
 
   // A wallet already authorised in this browser, on an account with nothing
   // linked yet (a second device, a fresh account): link it without asking.
@@ -162,6 +155,15 @@ export function Pledges() {
     link(address).catch((e) => setToast({ tone: 'err', text: friendlyError(e) }));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [address, linked]);
+
+  useEffect(() => {
+    if (!address) return;
+    try {
+      setWatched(localStorage.getItem(`goal-watched:${address}`) === '1');
+    } catch {
+      setWatched(true);
+    }
+  }, [address]);
 
   async function link(who: Address) {
     const res = await fetch('/api/chain/link-wallet', {
@@ -183,13 +185,15 @@ export function Pledges() {
       setToast({ tone: 'err', text: friendlyError(e) });
     } finally {
       setBusy(null);
+      setWalletLink(null);
     }
   }
 
   const onConnect = () =>
     run('connect', async () => {
+      // Opens MetaMask (the app on a phone, the extension on desktop) for one
+      // approval that also puts the wallet on the app's network.
       const who = await connect();
-      await ensureChain();
       setAddress(who);
       await link(who);
       await refreshWallet(who);
@@ -208,15 +212,30 @@ export function Pledges() {
       if (!res.ok) throw new Error(json.error ?? 'Could not send starter tokens.');
       setStarter((s) => (s ? { ...s, available: false } : s));
       await refreshWallet(address);
-      setToast({ tone: 'ok', text: `${json.amount} GOAL is in your wallet. Make your first pledge.` });
+      setToast({ tone: 'ok', text: `${json.amount} GOAL landed in your wallet on ${chain.name}. 🎉` });
     });
 
+  // Tokens are in the wallet either way; this just makes MetaMask list them,
+  // since it doesn't show tokens it hasn't been told about.
   const onWatchToken = () =>
     run('watch', async () => {
-      await walletClient().watchAsset({
+      await ensureChain();
+      await (await walletClient()).watchAsset({
         type: 'ERC20',
         options: { address: goalToken, symbol: 'GOAL', decimals: 18 },
       });
+      try {
+        localStorage.setItem(`goal-watched:${address}`, '1');
+      } catch {}
+      setWatched(true);
+    });
+
+  const onDisconnect = () =>
+    run('disconnect', async () => {
+      await disconnect();
+      setAddress(null);
+      setBalance(null);
+      setGas(null);
     });
 
   const onClaim = (p: Pledge) =>
@@ -241,7 +260,7 @@ export function Pledges() {
     run(`pledge-${p.goalId}`, async () => {
       if (!address) throw new Error('Connect your wallet first.');
       await ensureChain();
-      const hash = await walletClient().writeContract({
+      const hash = await (await walletClient()).writeContract({
         address: goalManager,
         abi: goalManagerAbi,
         functionName: 'markFailed',
@@ -265,17 +284,18 @@ export function Pledges() {
     : 0n;
   const won = past.filter((p) => p.status === 'Succeeded').length;
 
+  // Receiving GOAL needs no gas and no signature — the server sends it — so
+  // tokens come before gas. Gas only matters once you want to pledge.
   const steps = [
-    { key: 'install', done: installed === true },
     { key: 'connect', done: !!address && !!linked && linked.toLowerCase() === address.toLowerCase() },
     { key: 'network', done: !!address && rightChain },
-    { key: 'gas', done: gas !== null && gas >= MIN_GAS },
     { key: 'tokens', done: balance !== null && (balance > 0n || locked > 0n) },
+    { key: 'gas', done: gas !== null && gas >= MIN_GAS },
   ];
   const next = steps.find((s) => !s.done)?.key ?? null;
   const ready = next === null;
 
-  if (installed === null || pledges === null) {
+  if (pledges === null) {
     return (
       <div className="space-y-4">
         <SkeletonBlock className="h-28" />
@@ -297,6 +317,19 @@ export function Pledges() {
         >
           {toast.text}
         </p>
+      )}
+
+      {walletLink && (
+        <div role="status" className="flex items-center gap-3 rounded-2xl border border-accent/40 bg-accent/5 p-3 text-sm">
+          <span aria-hidden className="text-xl">🦊</span>
+          <p className="min-w-0 flex-1">
+            Approve in MetaMask, then come back here.
+            <span className="block text-xs text-muted">Didn&apos;t switch to MetaMask?</span>
+          </p>
+          <a href={walletLink} className="btn-primary shrink-0 px-3 text-sm">
+            Open MetaMask
+          </a>
+        </div>
       )}
 
       {/* ── What do I have ─────────────────────────────────────────────── */}
@@ -328,14 +361,35 @@ export function Pledges() {
           <Stat label="Pledges won" value={`${won}/${past.length}`} />
         </dl>
 
+        {address && balance !== null && balance > 0n && !watched && (
+          <div className="mt-3 flex items-center gap-3 rounded-xl bg-accent/10 p-3">
+            <p className="min-w-0 flex-1 text-xs">
+              Your GOAL is in your wallet. MetaMask only lists tokens it&apos;s told about — add it once to see it there.
+            </p>
+            <button
+              type="button"
+              className="btn-primary shrink-0 px-3 text-sm"
+              disabled={busy === 'watch'}
+              onClick={() => void onWatchToken()}
+            >
+              {busy === 'watch' ? '…' : 'Add to MetaMask'}
+            </button>
+          </div>
+        )}
+
         {address && (
-          <div className="mt-3 flex items-center justify-between text-[11px] text-muted">
-            <span>
+          <div className="mt-3 flex items-center justify-between gap-2 text-[11px] text-muted">
+            <span className="min-w-0 truncate">
               {chain.name}
               {gas !== null && ` · ${Number(formatEther(gas)).toFixed(4)} ${chain.nativeCurrency.symbol} for fees`}
             </span>
-            <button type="button" className="underline underline-offset-2" onClick={() => void onWatchToken()}>
-              Show GOAL in wallet
+            <button
+              type="button"
+              className="shrink-0 underline underline-offset-2"
+              disabled={busy === 'disconnect'}
+              onClick={() => void onDisconnect()}
+            >
+              Disconnect
             </button>
           </div>
         )}
@@ -390,7 +444,6 @@ export function Pledges() {
             gasSymbol={chain.nativeCurrency.symbol}
             networkName={chain.name}
             walletPresent={!!address}
-            mobile={isMobileDevice()}
             progress={steps.findIndex((s) => !s.done)}
             total={steps.length}
             onConnect={() => void onConnect()}
@@ -527,25 +580,21 @@ function Stat({ label, value, accent }: { label: string; value: string; accent?:
 }
 
 const STEP_COPY: Record<string, { title: string; body: string }> = {
-  install: {
-    title: 'Install a wallet',
-    body: 'Pledges live on a blockchain, so you need a wallet app to hold GOAL. MetaMask is the most common — open this page in its built-in browser on mobile.',
-  },
   connect: {
-    title: 'Connect your wallet',
-    body: 'Links your wallet to this account so your logs can be matched to your pledges. Your Google sign-in stays the same.',
+    title: 'Connect MetaMask',
+    body: 'Tap below and MetaMask opens to approve — on a phone it switches to the app and back. It also moves your wallet to the right network. No password, no transaction, nothing to pay.',
   },
   network: {
     title: 'Switch network',
-    body: 'Your wallet is on a different network. We’ll add it for you if it’s missing.',
-  },
-  gas: {
-    title: 'Get a little test gas',
-    body: 'Every blockchain action costs a tiny network fee. The official faucet gives it free — paste your wallet address there, then come back.',
+    body: 'Your wallet is on a different network. MetaMask will ask to switch — and add it if it’s missing.',
   },
   tokens: {
-    title: 'Get your starter GOAL',
-    body: 'GOAL is what you put on the line. Claim a one-time starter amount to make your first pledge.',
+    title: 'Claim your starter GOAL',
+    body: 'Free, one time, and sent straight to your wallet. Nothing to sign or pay — you just receive it.',
+  },
+  gas: {
+    title: 'Last step: a little gas to pledge',
+    body: 'Receiving GOAL is free, but making a pledge is a transaction, which costs a tiny network fee. The official faucet gives test gas free — paste your wallet address there, then come back.',
   },
 };
 
@@ -556,7 +605,6 @@ function SetupStep({
   gasSymbol,
   networkName,
   walletPresent,
-  mobile,
   progress,
   total,
   onConnect,
@@ -570,7 +618,6 @@ function SetupStep({
   gasSymbol: string;
   networkName: string;
   walletPresent: boolean;
-  mobile: boolean;
   progress: number;
   total: number;
   onConnect: () => void;
@@ -595,52 +642,42 @@ function SetupStep({
         {next === 'network'
           ? `Switch to ${networkName}`
           : next === 'gas'
-            ? `Get a little test ${gasSymbol}`
+            ? `Last step: a little test ${gasSymbol} to pledge`
             : next === 'connect' && walletPresent
               ? 'Use this wallet for pledges'
               : copy.title}
       </p>
       <p className="mt-1 text-sm text-muted">
-        {next === 'install' && mobile
-          ? 'Phone browsers can’t see your wallet app. Open this page inside MetaMask’s own browser and it connects and sets up the network for you.'
-          : next === 'connect' && walletPresent
-          ? 'The wallet open in this browser isn’t the one linked to your account. Pledges, claims and starter tokens follow the linked wallet.'
+        {next === 'connect' && walletPresent
+          ? 'The connected wallet isn’t the one linked to your account. Pledges, claims and starter tokens follow the linked wallet.'
           : copy.body}
       </p>
 
       <div className="mt-3">
-        {next === 'install' &&
-          (mobile ? (
-            <div className="space-y-2">
-              <a className="btn-primary w-full" href={metamaskDappLink()}>
-                Open in MetaMask
-              </a>
-              <p className="text-center text-xs text-muted">
-                Don&apos;t have it?{' '}
-                <a className="underline underline-offset-2" href="https://metamask.io/download/" target="_blank" rel="noreferrer">
-                  Install MetaMask
-                </a>
-              </p>
-            </div>
-          ) : (
-            <a className="btn-primary w-full" href="https://metamask.io/download/" target="_blank" rel="noreferrer">
-              Get MetaMask ↗
-            </a>
-          ))}
         {next === 'connect' && (
           <button type="button" className="btn-primary w-full" disabled={busy === 'connect'} onClick={onConnect}>
             {busy === 'connect'
-              ? 'Waiting for your wallet…'
+              ? 'Waiting for MetaMask…'
               : walletPresent
                 ? 'Use this wallet'
-                : 'Connect wallet'}
+                : '🦊 Connect MetaMask'}
           </button>
         )}
         {next === 'network' && (
           <button type="button" className="btn-primary w-full" disabled={busy === 'switch'} onClick={onSwitch}>
-            {busy === 'switch' ? 'Check your wallet…' : `Switch to ${networkName}`}
+            {busy === 'switch' ? 'Approve in MetaMask…' : `Switch to ${networkName}`}
           </button>
         )}
+        {next === 'tokens' &&
+          (starter?.available ? (
+            <button type="button" className="btn-primary w-full" disabled={busy === 'starter'} onClick={onStarter}>
+              {busy === 'starter' ? 'Sending to your wallet…' : `Claim ${starter.amount} free GOAL`}
+            </button>
+          ) : (
+            <p className="text-sm text-muted">
+              You&apos;ve already claimed your starter GOAL. Earn more on the Earn GOAL side, or ask the admin.
+            </p>
+          ))}
         {next === 'gas' && (
           <div className="flex gap-2">
             <a className="btn-primary flex-1" href={FAUCET_URL} target="_blank" rel="noreferrer">
@@ -651,16 +688,6 @@ function SetupStep({
             </button>
           </div>
         )}
-        {next === 'tokens' &&
-          (starter?.available ? (
-            <button type="button" className="btn-primary w-full" disabled={busy === 'starter'} onClick={onStarter}>
-              {busy === 'starter' ? 'Sending…' : `Claim ${starter.amount} starter GOAL`}
-            </button>
-          ) : (
-            <p className="text-sm text-muted">
-              You&apos;ve already claimed your starter GOAL. Ask the admin to send more to your wallet address.
-            </p>
-          ))}
       </div>
     </section>
   );
