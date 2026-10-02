@@ -11,8 +11,8 @@ import { join } from 'node:path';
  */
 
 /** Everything configurable, with the defaults stated rather than hidden. */
-const TOKEN_NAME = process.env.TOKEN_NAME ?? 'Goal Token';
-const TOKEN_SYMBOL = process.env.TOKEN_SYMBOL ?? 'GOAL';
+const TOKEN_NAME = process.env.TOKEN_NAME ?? 'Gains';
+const TOKEN_SYMBOL = process.env.TOKEN_SYMBOL ?? 'GAINS';
 const TOKEN_CAP = ethers.parseEther(process.env.TOKEN_CAP ?? '1000000');
 const PLATFORM_FEE_BPS = Number(process.env.PLATFORM_FEE_BPS ?? 1_000); // 10%
 const REWARD_RATE_BPS = Number(process.env.REWARD_RATE_BPS ?? 2_000); // 20% of stake

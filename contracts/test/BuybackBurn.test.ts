@@ -10,7 +10,7 @@ describe('BuybackBurn', () => {
   async function deploy() {
     const [admin, other] = await ethers.getSigners();
 
-    const token = await ethers.deployContract('GoalToken', ['G', 'GOAL', CAP, admin.address]);
+    const token = await ethers.deployContract('GoalToken', ['G', 'GAINS', CAP, admin.address]);
     const weth = ethers.Wallet.createRandom().address;
     const router = await ethers.deployContract('MockSwapRouter', [RATE, weth]);
     const buyback = await ethers.deployContract('BuybackBurn', [

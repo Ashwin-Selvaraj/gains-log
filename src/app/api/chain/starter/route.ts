@@ -10,11 +10,11 @@ export const maxDuration = 60;
 const STARTER_GRANT = 100;
 
 /**
- * A one-time float of GOAL so a new person can make their first pledge.
+ * A one-time float of GAINS so a new person can make their first pledge.
  *
  * Without it the feature is dead on arrival for everyone except whoever holds
- * the deployer's initial mint: there's no market to buy GOAL on, and the only
- * other way to earn it is to complete a pledge — which needs GOAL to start.
+ * the deployer's initial mint: there's no market to buy GAINS on, and the only
+ * other way to earn it is to complete a pledge — which needs GAINS to start.
  *
  * Testnet-only on purpose. On a real network, handing out tokens on request is
  * a policy decision (and an obvious farming target), not a UI convenience.

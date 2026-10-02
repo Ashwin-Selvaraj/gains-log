@@ -8,7 +8,7 @@ import { publicClient, verifierClient, goalTokenAddress } from '@/lib/chain/serv
 export const TESTNETS = new Set([31337, 11155111, 97]);
 
 /**
- * Whether the server may hand out GOAL from its float at all.
+ * Whether the server may hand out GAINS from its float at all.
  *
  * On by default only on testnets. On a real network, paying tokens for app
  * activity is a policy (and a farming target), so it needs an explicit
@@ -18,7 +18,7 @@ export const payoutsEnabled =
   TESTNETS.has(CHAIN_ID) || process.env.REWARDS_ENABLED === 'true';
 
 /**
- * Sends GOAL from the treasury float (the signer's own balance) and waits for
+ * Sends GAINS from the treasury float (the signer's own balance) and waits for
  * it to land. Throws with a sentence a person can read when it can't.
  *
  * The caller owns idempotency — claim a database row first, then pay, then

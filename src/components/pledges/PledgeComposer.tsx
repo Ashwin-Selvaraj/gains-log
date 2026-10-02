@@ -95,7 +95,7 @@ export function PledgeComposer({
         : kind.perDayCap && effectiveTarget > days
           ? `You can't log more than ${days} ${kind.unit} in ${days} days.`
           : !affordable
-            ? `You have ${fmtGoal(balance)} GOAL — pick a smaller stake.`
+            ? `You have ${fmtGoal(balance)} GAINS — pick a smaller stake.`
             : null;
 
   function choose(next: MetricKey) {
@@ -174,7 +174,7 @@ export function PledgeComposer({
       });
       if (!res.ok) throw new Error((await res.json()).error ?? 'Pledged, but could not save it.');
 
-      await onDone(`Pledge locked in — ${stake} GOAL on ${kind.title.toLowerCase()}. Go get it.`);
+      await onDone(`Pledge locked in — ${stake} GAINS on ${kind.title.toLowerCase()}. Go get it.`);
     } catch (e) {
       setError(friendlyError(e));
     } finally {
@@ -335,7 +335,7 @@ export function PledgeComposer({
               {s}
             </Chip>
           ))}
-          <span className="ml-1 text-sm text-muted">GOAL</span>
+          <span className="ml-1 text-sm text-muted">GAINS</span>
         </div>
 
         {money && (
@@ -372,7 +372,7 @@ export function PledgeComposer({
             ? 'Step 2 of 2 · Confirm the pledge…'
             : step === 'recording'
               ? 'Saving…'
-              : `Pledge ${stake} GOAL`}
+              : `Pledge ${stake} GAINS`}
       </button>
       <p className="-mt-3 text-center text-[11px] text-muted">
         Your wallet will ask you to confirm. Your own logs decide the result.

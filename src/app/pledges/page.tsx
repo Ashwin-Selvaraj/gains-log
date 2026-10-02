@@ -14,7 +14,7 @@ export default function PledgesPage() {
     <>
       <header className="mb-4">
         <h1 className="text-2xl font-bold tracking-tight">Pledges</h1>
-        <p className="text-sm text-muted">Back your goals with GOAL. Your own logs decide who wins.</p>
+        <p className="text-sm text-muted">Back your goals with GAINS tokens. Your own logs decide who wins.</p>
       </header>
 
       {chainConfigured ? (
