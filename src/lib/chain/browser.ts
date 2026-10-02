@@ -1,100 +1,183 @@
 'use client';
 
-import {
-  createPublicClient,
-  createWalletClient,
-  custom,
-  getAddress,
-  http,
-  type Address,
-  type EIP1193Provider,
-} from 'viem';
+import { createPublicClient, createWalletClient, custom, getAddress, http, type Address, type Hex } from 'viem';
 import { sepolia, hardhat, mainnet, bsc, bscTestnet } from 'viem/chains';
+import type { MetamaskConnectEVM } from '@metamask/connect-evm';
 import { CHAIN_ID, ADDRESSES } from '@/lib/chain/config';
 
 /**
- * Talking to the chain from the browser, with no wallet library.
+ * Talking to the chain from the browser.
  *
- * viem plus `window.ethereum` rather than wagmi or a connector kit: this app
- * has nine runtime dependencies and one wallet flow, and a connector framework
- * would be a larger addition than the feature it serves. The cost is that only
- * injected wallets work — MetaMask and its siblings, not WalletConnect — which
- * is the right trade while staking is one optional screen.
+ * Wallet access goes through MetaMask Connect rather than `window.ethereum`.
+ * A phone browser never has `window.ethereum` — MetaMask on a phone is an
+ * app, not an extension — so the old injected-only approach could only work
+ * by sending people into MetaMask's own browser and leaving the app. With
+ * Connect, the page stays where it is: tapping Connect opens the MetaMask app
+ * for approval and comes back. On desktop it uses the extension (or a QR code
+ * when there isn't one), and inside MetaMask's browser it uses that directly.
+ *
+ * Reads (balances, pledge state) don't touch the wallet at all — they go
+ * straight to the network over `publicClient`, so they work before anyone
+ * connects and regardless of which network the wallet is sitting on.
  */
 
 const CHAINS = { 1: mainnet, 56: bsc, 97: bscTestnet, 11155111: sepolia, 31337: hardhat } as const;
 export const chain = CHAINS[CHAIN_ID as keyof typeof CHAINS] ?? bscTestnet;
+const CHAIN_HEX = `0x${chain.id.toString(16)}` as Hex;
 
 export const publicClient = createPublicClient({ chain, transport: http() });
 
 export const goalToken = ADDRESSES.goalToken as Address;
 export const goalManager = ADDRESSES.goalManager as Address;
 
-function provider(): EIP1193Provider | null {
-  if (typeof window === 'undefined') return null;
-  return (window as unknown as { ethereum?: EIP1193Provider }).ethereum ?? null;
-}
+/** What MetaMask needs to add this network when it hasn't seen it before. */
+const CHAIN_CONFIG = {
+  chainId: CHAIN_HEX,
+  chainName: chain.name,
+  nativeCurrency: chain.nativeCurrency,
+  rpcUrls: [...chain.rpcUrls.default.http],
+  blockExplorerUrls: chain.blockExplorers ? [chain.blockExplorers.default.url] : undefined,
+};
 
-export const hasWallet = () => provider() !== null;
+let clientPromise: Promise<MetamaskConnectEVM> | null = null;
 
 /**
- * Resolves with whether a wallet appears, waiting briefly for late injection.
+ * The last "open MetaMask" link, for a manual fallback.
  *
- * Wallet browsers inject `window.ethereum` around page load, sometimes after
- * React has already mounted; checking once reported "no wallet" to people
- * who were inside one.
+ * The connector opens the app a moment after the tap, once its relay session
+ * exists — and iOS Safari can refuse to switch apps when the navigation isn't
+ * directly inside a tap. Remembering the link lets the page show a plain
+ * "Open MetaMask" link, which always works because tapping it is a gesture.
  */
-export function waitForWallet(timeoutMs = 1500): Promise<boolean> {
-  if (hasWallet()) return Promise.resolve(true);
-  return new Promise((resolve) => {
-    const done = (v: boolean) => {
-      window.removeEventListener('ethereum#initialized', onInit);
-      clearTimeout(timer);
-      resolve(v);
-    };
-    const onInit = () => done(hasWallet());
-    window.addEventListener('ethereum#initialized', onInit, { once: true });
-    const timer = setTimeout(() => done(hasWallet()), timeoutMs);
-  });
+const openLinkListeners = new Set<(url: string) => void>();
+export function onWalletLink(listener: (url: string) => void): () => void {
+  openLinkListeners.add(listener);
+  return () => openLinkListeners.delete(listener);
 }
-
-/** Phones and tablets, where a wallet is an app rather than a browser extension. */
-export function isMobileDevice(): boolean {
-  return typeof navigator !== 'undefined' && /Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
+function openWalletLink(url: string) {
+  openLinkListeners.forEach((l) => l(url));
+  window.location.href = url;
 }
 
 /**
- * Opens this exact page inside MetaMask's in-app browser.
+ * The MetaMask Connect client, created once and on first use.
  *
- * Mobile Safari and Chrome never expose a wallet to a page, even with MetaMask
- * installed — only MetaMask's own browser does. This universal link hands the
- * current page to the app (or the store listing if it isn't installed).
+ * Imported dynamically so its weight lands only on the Pledges tab, not on
+ * every screen of the app. Creation also restores any previous session, so a
+ * reload stays connected without a new approval.
  */
-export function metamaskDappLink(): string {
-  return `https://metamask.app.link/dapp/${window.location.host}${window.location.pathname}`;
+export function walletConnector(): Promise<MetamaskConnectEVM> {
+  if (!clientPromise) {
+    clientPromise = import('@metamask/connect-evm')
+      .then(({ createEVMClient }) =>
+        createEVMClient({
+          dapp: {
+            name: 'Gains Log',
+            url: window.location.origin,
+            iconUrl: `${window.location.origin}/icon-192.png`,
+          },
+          api: { supportedNetworks: { [CHAIN_HEX]: chain.rpcUrls.default.http[0] } },
+          // The connector's own usage analytics; nothing here needs them.
+          analytics: { enabled: false },
+          mobile: { preferredOpenLink: openWalletLink },
+        }),
+      )
+      .catch((err) => {
+        // Let the next attempt start over instead of caching a failure.
+        clientPromise = null;
+        throw err;
+      });
+  }
+  return clientPromise;
 }
 
-export function walletClient() {
-  const eth = provider();
-  if (!eth) throw new Error('No wallet found. Install MetaMask to stake.');
-  return createWalletClient({ chain, transport: custom(eth) });
+export async function walletClient() {
+  const client = await walletConnector();
+  return createWalletClient({ chain, transport: custom(client.getProvider()) });
 }
 
-/**
- * The account this site is already authorised for, without a prompt.
- *
- * `eth_accounts` rather than `eth_requestAccounts`: reopening the tab should
- * show your balance straight away, not a wallet popup you didn't ask for.
- */
+/** The account a previous session left connected, without prompting. */
 export async function silentAccount(): Promise<Address | null> {
-  const eth = provider();
-  if (!eth) return null;
   try {
-    const accounts = (await eth.request({ method: 'eth_accounts' })) as string[];
-    return accounts[0] ? getAddress(accounts[0]) : null;
+    const client = await walletConnector();
+    const account = client.status === 'connected' ? client.getAccount() : undefined;
+    return account ? getAddress(account) : null;
   } catch {
     return null;
   }
+}
+
+/**
+ * Connects and lands the wallet on the app's network, in as few prompts as
+ * MetaMask allows.
+ *
+ * The network is part of the connect request itself, so a wallet that already
+ * knows BSC Testnet comes back on it from the one approval. One that has never
+ * heard of it gets a second prompt to add it — MetaMask doesn't add networks
+ * as a side effect of connecting.
+ */
+export async function connect(): Promise<Address> {
+  const client = await walletConnector();
+  const { accounts, chainId } = await client.connect({ chainIds: [CHAIN_HEX], forceRequest: true });
+  const address = accounts[0];
+  if (!address) throw new Error('No account was shared.');
+  if (chainId?.toLowerCase() !== CHAIN_HEX) await ensureChain();
+  return getAddress(address);
+}
+
+export async function disconnect(): Promise<void> {
+  const client = await walletConnector();
+  await client.disconnect();
+}
+
+/**
+ * Makes sure the wallet is pointed at the app's network, adding it if needed.
+ *
+ * Worth doing before any write: a transaction sent on the wrong chain does not
+ * fail loudly, it succeeds somewhere nobody is looking, against contracts that
+ * are not these ones.
+ */
+export async function ensureChain(): Promise<void> {
+  const client = await walletConnector();
+  if (client.getChainId()?.toLowerCase() === CHAIN_HEX) return;
+  try {
+    await client.switchChain({ chainId: CHAIN_HEX, chainConfiguration: CHAIN_CONFIG });
+  } catch (err) {
+    if (isRejection(err)) throw err;
+    throw new Error(`Switch your wallet to ${chain.name} and try again.`);
+  }
+}
+
+/** True when the connected wallet is on the app's network. */
+export async function onRightChain(): Promise<boolean> {
+  try {
+    const client = await walletConnector();
+    return client.getChainId()?.toLowerCase() === CHAIN_HEX;
+  } catch {
+    return false;
+  }
+}
+
+/** Subscribes to account, network and disconnect events; returns an unsubscribe. */
+export function onWalletChange(handler: () => void): () => void {
+  let unsubs: (() => void)[] = [];
+  let cancelled = false;
+  void walletConnector()
+    .then((client) => {
+      if (cancelled) return;
+      const provider = client.getProvider();
+      unsubs = [
+        provider.on('accountsChanged', handler),
+        provider.on('chainChanged', handler),
+        provider.on('connect', handler),
+        provider.on('disconnect', handler),
+      ];
+    })
+    .catch(() => {});
+  return () => {
+    cancelled = true;
+    unsubs.forEach((u) => u());
+  };
 }
 
 /** Link to a transaction or address on this network's block explorer, if it has one. */
@@ -103,75 +186,15 @@ export function explorerUrl(kind: 'tx' | 'address' | 'token', value: string): st
   return base ? `${base}/${kind}/${value}` : null;
 }
 
-/** Prompts for accounts and returns the first, checksummed by viem. */
-export async function connect(): Promise<Address> {
-  const [address] = await walletClient().requestAddresses();
-  if (!address) throw new Error('No account was shared.');
-  return address;
-}
-
-/**
- * Makes sure the wallet is pointed at the same network the app is.
- *
- * Worth doing before any write: a transaction sent on the wrong chain does not
- * fail loudly, it succeeds somewhere nobody is looking, against contracts that
- * are not these ones.
- */
-export async function ensureChain(): Promise<void> {
-  const eth = provider();
-  if (!eth) throw new Error('No wallet found.');
-
-  const current = await eth.request({ method: 'eth_chainId' });
-  if (parseInt(current as string, 16) === chain.id) return;
-
-  try {
-    await walletClient().switchChain({ id: chain.id });
-  } catch (err) {
-    // 4902: the wallet has never heard of this network. MetaMask ships with
-    // Ethereum networks only, so on BSC Testnet this is the common case, not
-    // an edge case — add it rather than tell the user to go find RPC settings.
-    const code = (err as { code?: number; cause?: { code?: number } }).code ??
-      (err as { cause?: { code?: number } }).cause?.code;
-    if (code === 4902) {
-      try {
-        await walletClient().addChain({ chain });
-        return;
-      } catch {
-        /* fall through to the message below */
-      }
-    }
-    throw new Error(`Switch your wallet to ${chain.name} and try again.`);
-  }
-}
-
-/** True when the wallet is on the network the app's contracts live on. */
-export async function onRightChain(): Promise<boolean> {
-  const eth = provider();
-  if (!eth) return false;
-  const current = await eth.request({ method: 'eth_chainId' });
-  return parseInt(current as string, 16) === chain.id;
-}
-
-/** Subscribes to wallet account/network switches; returns an unsubscribe. */
-export function onWalletChange(handler: () => void): () => void {
-  const eth = provider() as (EIP1193Provider & {
-    removeListener?: (event: string, fn: () => void) => void;
-  }) | null;
-  if (!eth?.on) return () => {};
-  eth.on('accountsChanged', handler);
-  eth.on('chainChanged', handler);
-  return () => {
-    eth.removeListener?.('accountsChanged', handler);
-    eth.removeListener?.('chainChanged', handler);
-  };
+function isRejection(err: unknown): boolean {
+  const e = err as { code?: number; name?: string; message?: string };
+  return e?.code === 4001 || e?.name === 'UserRejectedRequestError' || /reject|denied|cancel/i.test(e?.message ?? '');
 }
 
 /** Turns a wallet/RPC error into one sentence a person can act on. */
 export function friendlyError(err: unknown): string {
-  const e = err as { code?: number; name?: string; shortMessage?: string; message?: string };
-  if (e?.code === 4001 || e?.name === 'UserRejectedRequestError') {
-    return 'You cancelled that in your wallet — nothing was sent.';
-  }
+  if (isRejection(err)) return 'You cancelled that in MetaMask — nothing was sent.';
+  const e = err as { shortMessage?: string; message?: string };
   const msg = e?.shortMessage ?? e?.message ?? 'Something went wrong.';
   if (/insufficient funds/i.test(msg)) {
     return `Not enough ${chain.nativeCurrency.symbol} for network fees. Top up from the faucet and try again.`;

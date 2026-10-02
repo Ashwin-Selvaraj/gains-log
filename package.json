@@ -19,6 +19,7 @@
     "@auth/prisma-adapter": "^2.11.3",
     "@aws-sdk/client-kms": "^3.1143.0",
     "@aws-sdk/client-s3": "^3.1124.0",
+    "@metamask/connect-evm": "^2.1.1",
     "@openzeppelin/merkle-tree": "^1.0.8",
     "@prisma/client": "^6.19.3",
     "heic-to": "^1.5.2",
